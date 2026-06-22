@@ -161,7 +161,7 @@ nav.tabs button.active {
 .page.active { display:block; }
 
 .app-footer {
-  margin: 24px 0 16px;
+  margin: 4px 0 8px;
   display: flex;
   justify-content: center;
   gap: 10px;
@@ -594,7 +594,6 @@ body.editing .card::before {
   </section>
 
   <footer class="app-footer">
-    <button class="btn ghost small" id="btn-edit-layout" type="button">✏️ Edit layout</button>
     <button class="btn ghost small" id="btn-open-setup" type="button">⚙️ Setup</button>
   </footer>
 
@@ -1447,7 +1446,6 @@ function bindSetup() {
     switchTab("setup");
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
-  $("#btn-edit-layout").addEventListener("click", toggleEditMode);
 }
 
 // ---- Drag-to-reorder card layout (per page, persisted in localStorage) ----
