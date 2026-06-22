@@ -149,13 +149,17 @@ def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
         d_str = d.isoformat()
         try:
             im = client.get_intensity_minutes_data(d_str) or {}
-            if offset == 0:
-                logger.info("Intensity sample (%s): %s", d_str, im)
         except Exception as e:
             logger.warning("Intensity fetch failed for %s: %s", d_str, e)
             im = {}
-        moderate = int(im.get("moderateValue") or 0)
-        vigorous = int(im.get("vigorousValue") or 0)
+        # Newer payloads use moderateMinutes / vigorousMinutes;
+        # older builds used moderateValue / vigorousValue.
+        moderate = int(
+            im.get("moderateMinutes") or im.get("moderateValue") or 0
+        )
+        vigorous = int(
+            im.get("vigorousMinutes") or im.get("vigorousValue") or 0
+        )
         out_days.append({
             "date": d_str,
             "moderate": moderate,
