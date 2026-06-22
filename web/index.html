@@ -561,6 +561,10 @@ body.editing .card::before {
       <h3 id="trend-steps-title">👣 Steps</h3>
       <div class="chart-wrap" id="chart-steps"></div>
     </div>
+    <div class="card" data-key="trend-calories">
+      <h3 id="trend-calories-title">🔥 Calories</h3>
+      <div class="chart-wrap" id="chart-calories"></div>
+    </div>
     <div class="card" data-key="trend-resting">
       <h3 id="trend-resting-title">❤️ Resting heart rate</h3>
       <div class="chart-wrap" id="chart-resting"></div>
@@ -1263,6 +1267,10 @@ function renderTrends() {
 
   renderBarChart($("#chart-steps"), windowed.map(d => ({ date: d.date, value: d.steps || 0 })),
                  { goal, yFmt: fmtNum });
+  const calGoal = (state && state.profile && state.profile.goalCalories) || DEFAULT_CALORIE_GOAL;
+  renderBarChart($("#chart-calories"),
+                 windowed.map(d => ({ date: d.date, value: Math.round(d.calories || 0) })),
+                 { goal: calGoal, yFmt: fmtNum });
   renderLineChart($("#chart-resting"), null,
                   { yFmt: v => v + " bpm",
                     series: [
