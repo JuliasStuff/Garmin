@@ -949,9 +949,6 @@ function renderToday() {
   if (cals) {
     calSubParts.push(calPct + "% of " + fmtNum(calGoal));
   }
-  if (today.activeCalories) {
-    calSubParts.push(fmtNum(today.activeCalories) + " active");
-  }
 
   const tiles = [
     {
@@ -1457,11 +1454,14 @@ function renderLineChart(container, points, options) {
 
     if (isPrimary) {
       const areaPath = svgEl("path", { d: areaD, class: "chart-line-area" });
-      if (s.color) areaPath.setAttribute("fill", s.color), areaPath.setAttribute("opacity", "0.18");
+      if (s.color) {
+        areaPath.style.fill = s.color;
+        areaPath.style.opacity = "0.18";
+      }
       svg.appendChild(areaPath);
     }
     const linePath = svgEl("path", { d, class: "chart-line" });
-    if (s.color) linePath.setAttribute("stroke", s.color);
+    if (s.color) linePath.style.stroke = s.color;
     svg.appendChild(linePath);
 
     s.filtered.forEach((p) => {
@@ -1469,7 +1469,7 @@ function renderLineChart(container, points, options) {
       const x = padL + (idx >= 0 ? idx : 0) * xStep;
       const y = padT + innerH - ((p.value - lo) / range) * innerH;
       const c = svgEl("circle", { cx: x, cy: y, r: 2.5, class: "chart-dot" });
-      if (s.color) c.setAttribute("fill", s.color);
+      if (s.color) c.style.fill = s.color;
       const title = svgEl("title");
       const prefix = s.name ? (s.name + " ") : "";
       title.textContent = fmtDate(p.date) + ": " + prefix + (options.yFmt ? options.yFmt(p.value) : p.value);
