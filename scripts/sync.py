@@ -78,10 +78,28 @@ def _to_min(seconds: Any) -> int | None:
     return int(round(seconds / 60))
 
 
+def _current_hr(hr_obj: dict[str, Any]) -> tuple[int | None, str | None]:
+    """Return (bpm, ISO timestamp) of the most recent non-null HR sample."""
+    values = hr_obj.get("heartRateValues") or []
+    for entry in reversed(values):
+        if not entry or len(entry) < 2:
+            continue
+        ts, bpm = entry[0], entry[1]
+        if bpm is None or ts is None:
+            continue
+        try:
+            iso = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
+        except Exception:
+            iso = None
+        return int(bpm), iso
+    return None, None
+
+
 def _collect_today(client: Garmin) -> dict[str, Any]:
     today_str = date.today().isoformat()
     stats = client.get_stats(today_str) or {}
     hr = client.get_heart_rates(today_str) or {}
+    current_hr, current_hr_at = _current_hr(hr)
     return {
         "date": today_str,
         "steps": stats.get("totalSteps"),
@@ -92,6 +110,8 @@ def _collect_today(client: Garmin) -> dict[str, Any]:
         "restingHR": stats.get("restingHeartRate") or hr.get("restingHeartRate"),
         "minHR": hr.get("minHeartRate"),
         "maxHR": hr.get("maxHeartRate"),
+        "currentHR": current_hr,
+        "currentHRAt": current_hr_at,
         "bodyBattery": stats.get("bodyBatteryMostRecentValue"),
         "stress": stats.get("averageStressLevel"),
         "floors": stats.get("floorsAscended"),

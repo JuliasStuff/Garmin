@@ -13,6 +13,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
 <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+
+<!-- Sortable.js for drag-to-reorder cards in edit mode -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js" defer></script>
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Garmin" />
@@ -149,6 +152,44 @@ nav.tabs button.active {
 .page { display:none; }
 .page.active { display:block; }
 
+.app-footer {
+  margin: 24px 0 16px;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Drag-to-reorder edit mode */
+body.editing .card {
+  cursor: grab;
+  border-style: dashed;
+  border-color: var(--accent);
+  user-select: none;
+}
+body.editing .card:active { cursor: grabbing; }
+body.editing .card::before {
+  content: "⠇⠇";
+  display: inline-block;
+  margin-right: 8px;
+  color: var(--accent);
+  font-weight: 900;
+  letter-spacing: -2px;
+  vertical-align: middle;
+}
+.card-ghost {
+  opacity: 0.35;
+  background: var(--accent-soft) !important;
+}
+.card-chosen {
+  box-shadow: 0 8px 22px rgba(0,0,0,0.18);
+}
+#btn-edit-layout.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent-2);
+}
+
 .card {
   background:var(--panel);
   border:1px solid var(--line);
@@ -201,6 +242,29 @@ nav.tabs button.active {
   border-radius:999px;
 }
 
+.hr-card .hr-row {
+  display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+  margin-bottom:6px;
+}
+.hr-value {
+  font-size:32px; font-weight:800; line-height:1; color:var(--ink);
+}
+.hr-value .unit {
+  font-size:13px; font-weight:600; color:var(--ink-soft); margin-left:4px;
+}
+.hr-zone {
+  font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.06em;
+}
+.hr-meta {
+  font-size:12px; color:var(--ink-soft); margin-left:auto;
+}
+.hr-gauge {
+  margin-top:6px;
+}
+.hr-gauge svg {
+  width:100%; height:auto; display:block;
+}
+
 .sleep-bar {
   display:flex; height:18px; border-radius:6px; overflow:hidden;
   border:1px solid var(--line); margin-top:8px;
@@ -215,6 +279,22 @@ nav.tabs button.active {
 }
 .sleep-legend .sw {
   width:10px; height:10px; border-radius:3px; display:inline-block;
+}
+
+.sleep-stats {
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
+  gap:8px;
+}
+.sleep-tile.goal-met {
+  background:linear-gradient(135deg, rgba(76,175,106,0.18), #fff);
+  border-color:var(--good);
+}
+.sleep-tile.goal-met .st-val { color:var(--good); }
+.sleep-score { grid-column:1 / -1; margin-top:4px; }
+@media (max-width: 420px) {
+  .sleep-tile { padding:10px; }
+  .sleep-tile .st-val { font-size:20px; }
 }
 
 .act-list { display:flex; flex-direction:column; gap:8px; }
@@ -350,51 +430,59 @@ nav.tabs button.active {
     <button data-tab="today" class="active">📊 Today</button>
     <button data-tab="trends">📈 Trends</button>
     <button data-tab="activities">🏃 Activities</button>
-    <button data-tab="setup">⚙️ Setup</button>
   </nav>
 
   <section id="page-today" class="page active">
-    <div class="card">
-      <h2 id="today-title">Today</h2>
+    <div class="card" data-key="stats">
       <p class="muted" id="today-subtitle">Waiting for first sync…</p>
       <div class="stats-grid" id="stats-grid"></div>
     </div>
 
-    <div class="card">
+    <div class="card hr-card" data-key="hr">
+      <h3>❤️ Heart rate</h3>
+      <div class="hr-row">
+        <div class="hr-value" id="hr-value">—</div>
+        <div class="hr-zone" id="hr-zone"></div>
+        <div class="hr-meta" id="hr-meta"></div>
+      </div>
+      <div class="hr-gauge" id="hr-gauge"></div>
+    </div>
+
+    <div class="card" data-key="sleep">
       <h3>😴 Last night's sleep</h3>
       <div id="sleep-content" class="empty">No sleep data yet.</div>
     </div>
 
-    <div class="card">
+    <div class="card" data-key="today-activities">
       <h3>🏃 Today's activities</h3>
       <div id="today-activities" class="empty">No activities today.</div>
     </div>
   </section>
 
   <section id="page-trends" class="page">
-    <div class="card">
+    <div class="card" data-key="trend-steps">
       <h3>👣 Steps — last 30 days</h3>
       <div class="chart-wrap" id="chart-steps"></div>
     </div>
-    <div class="card">
+    <div class="card" data-key="trend-resting">
       <h3>❤️ Resting heart rate — last 30 days</h3>
       <div class="chart-wrap" id="chart-resting"></div>
     </div>
-    <div class="card">
+    <div class="card" data-key="trend-sleep">
       <h3>🌙 Sleep — last 30 days</h3>
       <div class="chart-wrap" id="chart-sleep"></div>
     </div>
   </section>
 
   <section id="page-activities" class="page">
-    <div class="card">
+    <div class="card" data-key="recent">
       <h3>Recent activities</h3>
       <div id="activities-list" class="empty">No activities yet.</div>
     </div>
   </section>
 
   <section id="page-setup" class="page">
-    <div class="card">
+    <div class="card" data-key="firebase">
       <h3>☁️ Firebase</h3>
       <div class="kv-row"><div class="k">Status</div><div class="v" id="setup-fb-status">…</div></div>
       <div class="kv-row"><div class="k">Project ID</div><div class="v" id="setup-fb-project">—</div></div>
@@ -406,7 +494,7 @@ nav.tabs button.active {
       </p>
     </div>
 
-    <div class="card">
+    <div class="card" data-key="manual-sync">
       <h3>🔄 Manual sync (GitHub Actions)</h3>
       <p class="muted">
         A GitHub Actions workflow syncs automatically every hour. The button triggers it on demand.
@@ -424,7 +512,7 @@ nav.tabs button.active {
       <div id="func-status" class="muted" style="margin-top:8px;"></div>
     </div>
 
-    <div class="card">
+    <div class="card" data-key="cache">
       <h3>💾 Local cache</h3>
       <div class="kv-row"><div class="k">Cached doc</div><div class="v" id="setup-cache-size">—</div></div>
       <div class="kv-row"><div class="k">Last update</div><div class="v" id="setup-cache-time">—</div></div>
@@ -433,7 +521,7 @@ nav.tabs button.active {
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" data-key="about">
       <h3>ℹ️ About</h3>
       <p class="muted">
         Garmin Tracker is a personal PWA that displays watch data synced from
@@ -444,6 +532,11 @@ nav.tabs button.active {
       </p>
     </div>
   </section>
+
+  <footer class="app-footer">
+    <button class="btn ghost small" id="btn-edit-layout" type="button">✏️ Edit layout</button>
+    <button class="btn ghost small" id="btn-open-setup" type="button">⚙️ Setup</button>
+  </footer>
 
 </div>
 
@@ -737,7 +830,6 @@ function activityIcon(type) {
 // Render: Today
 function renderToday() {
   const today = (state && state.today) || {};
-  $("#today-title").textContent = today.date ? fmtDate(today.date) : "Today";
 
   const last = state && state.lastSyncIso ? new Date(state.lastSyncIso) : null;
   $("#today-subtitle").textContent = last
@@ -757,16 +849,10 @@ function renderToday() {
       progress: stepPct,
       accent: true
     },
-    { lbl: "Resting HR", val: fmtNum(today.restingHR), unit: "bpm" },
     {
       lbl: "Sleep",
       val: fmtDurationMin(sleep.totalMin),
       sub: sleep.score ? ("Score " + sleep.score) : null
-    },
-    {
-      lbl: "Body Battery",
-      val: fmtNum(today.bodyBattery),
-      sub: today.stress !== undefined && today.stress !== null ? ("Stress " + today.stress) : null
     },
     {
       lbl: "Calories",
@@ -794,8 +880,132 @@ function renderToday() {
     grid.appendChild(tile);
   }
 
+  renderHeartRate();
   renderSleep();
   renderTodayActivities();
+}
+
+const HR_ZONES = [
+  { min: 40,  max: 90,  color: "#3a86ff", label: "Recovery" },
+  { min: 90,  max: 110, color: "#52b788", label: "Light" },
+  { min: 110, max: 130, color: "#ffb627", label: "Moderate" },
+  { min: 130, max: 150, color: "#fb8500", label: "Vigorous" },
+  { min: 150, max: 180, color: "#a63446", label: "Peak" }
+];
+
+function renderHeartRate() {
+  const today = (state && state.today) || {};
+  const hrCurr = today.currentHR;
+  const hrCurrAt = today.currentHRAt;
+  const hrRest = today.restingHR;
+
+  const RANGE_MIN = 40;
+  const RANGE_MAX = 180;
+  const W = 500;
+  const PAD = 24;
+  const H = 76;
+  const trackY = 22;
+  const trackH = 26;
+
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const x = bpm => ((clamp(bpm, RANGE_MIN, RANGE_MAX) - RANGE_MIN) / (RANGE_MAX - RANGE_MIN)) * W;
+
+  let zone = null;
+  if (hrCurr) {
+    zone = HR_ZONES.find(z => hrCurr >= z.min && hrCurr < z.max) || HR_ZONES[HR_ZONES.length - 1];
+  }
+
+  const valEl = $("#hr-value");
+  const zoneEl = $("#hr-zone");
+  const metaEl = $("#hr-meta");
+  const gaugeEl = $("#hr-gauge");
+
+  if (hrCurr) {
+    valEl.innerHTML = hrCurr + '<span class="unit">bpm</span>';
+  } else {
+    valEl.textContent = "—";
+  }
+  zoneEl.textContent = zone ? zone.label : "";
+  zoneEl.style.color = zone ? zone.color : "var(--ink-soft)";
+
+  let metaText = "";
+  if (hrCurrAt) {
+    const d = new Date(hrCurrAt);
+    metaText = "as of " + d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  metaEl.textContent = metaText;
+
+  const svg = svgEl("svg", {
+    viewBox: (-PAD) + " 0 " + (W + 2 * PAD) + " " + H,
+    role: "img",
+    "aria-label": hrCurr
+      ? ("Current heart rate " + hrCurr + " bpm, " + (zone ? zone.label : "") + " zone")
+      : "Heart rate gauge, no current reading"
+  });
+
+  // Zone bands
+  for (const z of HR_ZONES) {
+    const xs = x(z.min);
+    const xe = x(z.max);
+    svg.appendChild(svgEl("rect", {
+      x: xs, y: trackY, width: xe - xs, height: trackH,
+      fill: z.color, opacity: 0.88
+    }));
+  }
+  // Outer rounded mask so the track has rounded ends
+  svg.appendChild(svgEl("rect", {
+    x: 0, y: trackY, width: W, height: trackH,
+    fill: "none", stroke: "rgba(0,0,0,0.15)", "stroke-width": 1, rx: 4, ry: 4
+  }));
+
+  // Tick marks and labels
+  const ticks = [40, 90, 110, 130, 150, 180];
+  for (const t of ticks) {
+    const tx = x(t);
+    svg.appendChild(svgEl("line", {
+      x1: tx, y1: trackY + trackH, x2: tx, y2: trackY + trackH + 4,
+      stroke: "rgba(0,0,0,0.4)", "stroke-width": 1
+    }));
+    const label = svgEl("text", {
+      x: tx, y: trackY + trackH + 16, "text-anchor": "middle",
+      "font-size": 11, fill: "rgba(0,0,0,0.55)", "font-weight": 600,
+      "font-family": "inherit"
+    });
+    label.textContent = String(t);
+    svg.appendChild(label);
+  }
+
+  // Resting HR marker (dashed line + label)
+  if (hrRest) {
+    const rx = x(hrRest);
+    svg.appendChild(svgEl("line", {
+      x1: rx, y1: trackY, x2: rx, y2: trackY + trackH,
+      stroke: "rgba(0,0,0,0.55)", "stroke-width": 1.5, "stroke-dasharray": "3 2"
+    }));
+    const lbl = svgEl("text", {
+      x: rx, y: trackY - 6, "text-anchor": "middle",
+      "font-size": 10, fill: "rgba(0,0,0,0.55)", "font-weight": 700,
+      "font-family": "inherit"
+    });
+    lbl.textContent = "Resting " + hrRest;
+    svg.appendChild(lbl);
+  }
+
+  // Current HR pointer (downward triangle + line through track)
+  if (hrCurr) {
+    const cx = x(hrCurr);
+    svg.appendChild(svgEl("polygon", {
+      points: (cx - 7) + ",6 " + (cx + 7) + ",6 " + cx + "," + (trackY - 2),
+      fill: "var(--ink)"
+    }));
+    svg.appendChild(svgEl("line", {
+      x1: cx, y1: trackY, x2: cx, y2: trackY + trackH,
+      stroke: "var(--ink)", "stroke-width": 2
+    }));
+  }
+
+  gaugeEl.innerHTML = "";
+  gaugeEl.appendChild(svg);
 }
 
 function renderSleep() {
@@ -806,39 +1016,35 @@ function renderSleep() {
     c.textContent = "No sleep data yet.";
     return;
   }
-  c.className = "";
+  c.className = "sleep-stats";
   c.innerHTML = "";
 
-  const segs = [
-    { color: "#2d4f80", lbl: "Deep",  mins: s.deepMin || 0 },
-    { color: "#7eb2dc", lbl: "Light", mins: s.lightMin || 0 },
-    { color: "#b58cd6", lbl: "REM",   mins: s.remMin || 0 },
-    { color: "#e0c98b", lbl: "Awake", mins: s.awakeMin || 0 }
-  ];
-  const total = s.totalMin || 1;
+  const TOTAL_GOAL_MIN = 7 * 60;   // 7 hours
+  const DEEP_GOAL_MIN  = 90;       // 90 minutes
 
-  c.appendChild(el("div", { class: "muted" },
-    "Night of " + fmtDate(s.date) + " • " + fmtDurationMin(s.totalMin)
-      + (s.score ? " • score " + s.score : "")
-  ));
+  const totalMin = s.totalMin || 0;
+  const deepMin  = s.deepMin || 0;
+  const awakeMin = s.awakeMin || 0;
 
-  const bar = el("div", { class: "sleep-bar" });
-  for (const sg of segs) {
-    const pct = (sg.mins / total) * 100;
-    if (pct > 0) {
-      bar.appendChild(el("span", { style: "width:" + pct + "%; background:" + sg.color }));
+  const tile = (label, mins, goalHit, sub) => {
+    const valNode = el("div", { class: "st-val" }, fmtDurationMin(mins));
+    const t = el("div", { class: "stat-tile sleep-tile" + (goalHit ? " goal-met" : "") },
+      el("div", { class: "st-lbl" }, label),
+      valNode
+    );
+    if (sub) {
+      t.appendChild(el("div", { class: "st-sub" }, sub));
     }
-  }
-  c.appendChild(bar);
+    return t;
+  };
 
-  const legend = el("div", { class: "sleep-legend" });
-  for (const sg of segs) {
-    legend.appendChild(el("span", { class: "key" },
-      el("span", { class: "sw", style: "background:" + sg.color }),
-      sg.lbl + ": " + fmtDurationMin(sg.mins)
-    ));
+  c.appendChild(tile("Total sleep", totalMin, totalMin >= TOTAL_GOAL_MIN, "Goal 7h"));
+  c.appendChild(tile("Deep sleep",  deepMin,  deepMin  >= DEEP_GOAL_MIN,  "Goal 90m"));
+  c.appendChild(tile("Awake",       awakeMin, false));
+
+  if (s.score) {
+    c.appendChild(el("div", { class: "muted sleep-score" }, "Sleep score " + s.score));
   }
-  c.appendChild(legend);
 }
 
 function renderTodayActivities() {
@@ -923,7 +1129,7 @@ function renderTrends() {
   renderLineChart($("#chart-resting"), last30.map(d => ({ date: d.date, value: d.restingHR })),
                   { yFmt: v => v + " bpm" });
   renderBarChart($("#chart-sleep"), last30.map(d => ({ date: d.date, value: d.sleepMin || 0 })),
-                 { yFmt: v => fmtDurationMin(v) });
+                 { goal: 7 * 60, yFmt: v => fmtDurationMin(v) });
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1143,6 +1349,92 @@ function bindSetup() {
     renderAll();
   });
   $("#btn-sync").addEventListener("click", manualSync);
+  $("#btn-open-setup").addEventListener("click", () => {
+    switchTab("setup");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  $("#btn-edit-layout").addEventListener("click", toggleEditMode);
+}
+
+// ---- Drag-to-reorder card layout (per page, persisted in localStorage) ----
+
+const LS_ORDER_PREFIX = "garminTracker.v1.order.";
+let sortableInstances = [];
+
+function orderKey(tab) { return LS_ORDER_PREFIX + tab; }
+
+function tabOf(pageEl) { return pageEl.id.replace(/^page-/, ""); }
+
+function saveOrder(pageEl) {
+  const keys = Array.from(pageEl.querySelectorAll(":scope > .card[data-key]"))
+    .map(c => c.dataset.key);
+  localStorage.setItem(orderKey(tabOf(pageEl)), JSON.stringify(keys));
+}
+
+function applyOrder(pageEl) {
+  const saved = localStorage.getItem(orderKey(tabOf(pageEl)));
+  if (!saved) return;
+  let order;
+  try { order = JSON.parse(saved); } catch { return; }
+  if (!Array.isArray(order)) return;
+  const cards = Array.from(pageEl.querySelectorAll(":scope > .card[data-key]"));
+  const byKey = new Map(cards.map(c => [c.dataset.key, c]));
+  for (const k of order) {
+    const c = byKey.get(k);
+    if (c) {
+      pageEl.appendChild(c);
+      byKey.delete(k);
+    }
+  }
+  // Any cards added since the order was saved go to the end in their original order
+  for (const c of byKey.values()) {
+    pageEl.appendChild(c);
+  }
+}
+
+function applyAllOrders() {
+  $$(".page").forEach(applyOrder);
+}
+
+function initSortables() {
+  destroySortables();
+  if (typeof Sortable === "undefined") {
+    console.warn("Sortable.js not loaded — drag-to-reorder unavailable");
+    return;
+  }
+  $$(".page").forEach(page => {
+    const inst = Sortable.create(page, {
+      animation: 180,
+      draggable: ".card",
+      ghostClass: "card-ghost",
+      chosenClass: "card-chosen",
+      forceFallback: true,        // consistent visuals on touch + desktop
+      fallbackTolerance: 4,
+      onEnd: () => saveOrder(page)
+    });
+    sortableInstances.push(inst);
+  });
+}
+
+function destroySortables() {
+  for (const s of sortableInstances) {
+    try { s.destroy(); } catch (_) {}
+  }
+  sortableInstances = [];
+}
+
+function toggleEditMode() {
+  const editing = document.body.classList.toggle("editing");
+  const btn = $("#btn-edit-layout");
+  if (editing) {
+    btn.classList.add("active");
+    btn.textContent = "✓ Done";
+    initSortables();
+  } else {
+    btn.classList.remove("active");
+    btn.textContent = "✏️ Edit layout";
+    destroySortables();
+  }
 }
 
 function renderAll() {
@@ -1156,6 +1448,7 @@ function init() {
   bindTabs();
   bindSetup();
   renderAll();
+  applyAllOrders();
 
   if (isConfigPlaceholder(FIREBASE_CONFIG)) {
     setSyncDot("off");
