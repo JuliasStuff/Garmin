@@ -49,6 +49,7 @@ PROFILE_ID = os.getenv("GARMIN_PROFILE_ID", "default")
 HISTORY_DAYS = int(os.getenv("GARMIN_HISTORY_DAYS", "30"))
 ACTIVITY_LIMIT = int(os.getenv("GARMIN_ACTIVITY_LIMIT", "20"))
 STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "7000"))
+CALORIE_GOAL = int(os.getenv("GARMIN_CALORIE_GOAL", "2300"))
 INTENSITY_GOAL = int(os.getenv("GARMIN_INTENSITY_GOAL", "140"))
 INTENSITY_DAYS = 7
 
@@ -234,6 +235,7 @@ def _profile(client: Garmin) -> dict[str, Any]:
         "fullName": full_name,
         "unitSystem": unit,
         "goalSteps": STEP_GOAL,
+        "goalCalories": CALORIE_GOAL,
     }
 
 

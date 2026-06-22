@@ -629,6 +629,7 @@ const GH_WORKFLOW_FILE = "sync.yml";
 const GH_REF = "main";
 
 const DEFAULT_STEP_GOAL = 7000;
+const DEFAULT_CALORIE_GOAL = 2300;
 
 // DOM helpers
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -895,6 +896,17 @@ function renderToday() {
   const steps = today.steps;
   const stepPct = steps ? Math.min(100, Math.round((steps / goal) * 100)) : 0;
 
+  const calGoal = (state && state.profile && state.profile.goalCalories) || DEFAULT_CALORIE_GOAL;
+  const cals = today.totalCalories;
+  const calPct = cals ? Math.min(100, Math.round((cals / calGoal) * 100)) : 0;
+  const calSubParts = [];
+  if (cals) {
+    calSubParts.push(calPct + "% of " + fmtNum(calGoal));
+  }
+  if (today.activeCalories) {
+    calSubParts.push(fmtNum(today.activeCalories) + " active");
+  }
+
   const tiles = [
     {
       lbl: "Steps",
@@ -905,8 +917,9 @@ function renderToday() {
     },
     {
       lbl: "Calories",
-      val: fmtNum(today.totalCalories),
-      sub: today.activeCalories ? (fmtNum(today.activeCalories) + " active") : null
+      val: fmtNum(cals),
+      sub: calSubParts.length ? calSubParts.join(" · ") : null,
+      progress: cals ? calPct : undefined
     }
   ];
 
