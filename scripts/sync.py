@@ -192,6 +192,8 @@ def _collect_history(client: Garmin, days: int) -> list[dict[str, Any]]:
                 "date": d_str,
                 "steps": s.get("totalSteps"),
                 "restingHR": s.get("restingHeartRate"),
+                "maxHR": s.get("maxHeartRate"),
+                "minHR": s.get("minHeartRate"),
                 "sleepMin": _to_min(dto.get("sleepTimeSeconds")),
                 "sleepScore": score,
             })

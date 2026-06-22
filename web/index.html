@@ -416,6 +416,16 @@ body.editing .card::before {
 .chart-goal-line {
   stroke:var(--bad); stroke-width:1; stroke-dasharray:4 3;
 }
+.chart-legend {
+  display:flex; flex-wrap:wrap; gap:10px 14px;
+  font-size:12px; color:var(--ink-soft);
+  margin:0 0 6px 2px;
+}
+.chart-legend .swatch {
+  display:inline-block; width:10px; height:10px;
+  border-radius:2px; margin-right:5px; vertical-align:middle;
+}
+.chart-legend .item { white-space:nowrap; }
 
 .field { margin-bottom:12px; }
 .field label {
@@ -548,15 +558,15 @@ body.editing .card::before {
       <button type="button" data-range="365">1 year</button>
     </div>
     <div class="card" data-key="trend-steps">
-      <h3 id="trend-steps-title">👣 Steps — last 30 days</h3>
+      <h3 id="trend-steps-title">👣 Steps</h3>
       <div class="chart-wrap" id="chart-steps"></div>
     </div>
     <div class="card" data-key="trend-resting">
-      <h3 id="trend-resting-title">❤️ Resting heart rate — last 30 days</h3>
+      <h3 id="trend-resting-title">❤️ Resting heart rate</h3>
       <div class="chart-wrap" id="chart-resting"></div>
     </div>
     <div class="card" data-key="trend-sleep">
-      <h3 id="trend-sleep-title">🌙 Sleep — last 30 days</h3>
+      <h3 id="trend-sleep-title">🌙 Sleep</h3>
       <div class="chart-wrap" id="chart-sleep"></div>
     </div>
   </section>
@@ -1251,23 +1261,16 @@ function renderTrends() {
   const windowed = history.slice(-days);
   const goal = (state && state.profile && state.profile.goalSteps) || DEFAULT_STEP_GOAL;
 
-  const labels = {
-    7: "last 7 days",
-    30: "last 30 days",
-    365: "last year"
-  };
-  const lbl = labels[days] || ("last " + days + " days");
-  const stepsTitle = $("#trend-steps-title");
-  const restingTitle = $("#trend-resting-title");
-  const sleepTitle = $("#trend-sleep-title");
-  if (stepsTitle) stepsTitle.textContent = "\ud83d\udc63 Steps \u2014 " + lbl;
-  if (restingTitle) restingTitle.textContent = "\u2764\ufe0f Resting heart rate \u2014 " + lbl;
-  if (sleepTitle) sleepTitle.textContent = "\ud83c\udf19 Sleep \u2014 " + lbl;
-
   renderBarChart($("#chart-steps"), windowed.map(d => ({ date: d.date, value: d.steps || 0 })),
                  { goal, yFmt: fmtNum });
-  renderLineChart($("#chart-resting"), windowed.map(d => ({ date: d.date, value: d.restingHR })),
-                  { yFmt: v => v + " bpm" });
+  renderLineChart($("#chart-resting"), null,
+                  { yFmt: v => v + " bpm",
+                    series: [
+                      { name: "Resting", color: "#1f6db8",
+                        points: windowed.map(d => ({ date: d.date, value: d.restingHR })) },
+                      { name: "Max", color: "#d94a4a",
+                        points: windowed.map(d => ({ date: d.date, value: d.maxHR })) }
+                    ] });
   renderBarChart($("#chart-sleep"), windowed.map(d => ({ date: d.date, value: d.sleepMin || 0 })),
                  { goal: 7 * 60, yFmt: v => fmtDurationMin(v) });
 }
@@ -1355,17 +1358,44 @@ function renderBarChart(container, points, options) {
 function renderLineChart(container, points, options) {
   options = options || {};
   container.innerHTML = "";
-  const filtered = points.filter(p => p.value !== null && p.value !== undefined);
-  if (filtered.length === 0) {
+
+  // Allow multi-series via options.series = [{ points, color, name }]
+  const seriesInput = options.series && options.series.length
+    ? options.series
+    : [{ points: points, color: null, name: null }];
+
+  const series = seriesInput.map(s => ({
+    name: s.name || null,
+    color: s.color || null,
+    filtered: (s.points || []).filter(p => p.value !== null && p.value !== undefined)
+  })).filter(s => s.filtered.length > 0);
+
+  if (series.length === 0) {
     container.appendChild(el("div", { class: "empty", text: "Not enough data yet." }));
     return;
   }
+
+  // Legend (only when more than one named series)
+  const named = series.filter(s => s.name);
+  if (named.length > 1) {
+    const legend = el("div", { class: "chart-legend" });
+    for (const s of named) {
+      const item = el("span", { class: "item" });
+      const sw = el("span", { class: "swatch" });
+      if (s.color) sw.style.background = s.color;
+      item.appendChild(sw);
+      item.appendChild(document.createTextNode(s.name));
+      legend.appendChild(item);
+    }
+    container.appendChild(legend);
+  }
+
   const W = 600, H = 180, padL = 40, padR = 8, padT = 14, padB = 22;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
-  const values = filtered.map(p => p.value);
-  const minV = Math.min(...values);
-  const maxV = Math.max(...values);
+  const allValues = series.flatMap(s => s.filtered.map(p => p.value));
+  const minV = Math.min(...allValues);
+  const maxV = Math.max(...allValues);
   const pad = (maxV - minV) * 0.15 || 1;
   const lo = Math.floor(minV - pad);
   const hi = Math.ceil(maxV + pad);
@@ -1387,41 +1417,65 @@ function renderLineChart(container, points, options) {
     svg.appendChild(tx);
   }
 
-  const xStep = filtered.length > 1 ? innerW / (filtered.length - 1) : 0;
-  let d = "";
-  let areaD = "";
-  filtered.forEach((p, i) => {
-    const x = padL + i * xStep;
-    const y = padT + innerH - ((p.value - lo) / range) * innerH;
-    if (i === 0) {
-      d += "M" + x + "," + y;
-      areaD += "M" + x + "," + (padT + innerH) + " L" + x + "," + y;
-    } else {
-      d += " L" + x + "," + y;
-      areaD += " L" + x + "," + y;
+  // Use the longest series to set x range so series align on shared dates.
+  const longest = series.reduce((a, b) => a.filtered.length >= b.filtered.length ? a : b);
+  const N = longest.filtered.length;
+  const xStep = N > 1 ? innerW / (N - 1) : 0;
+  const indexFor = (date) => {
+    for (let i = 0; i < longest.filtered.length; i++) {
+      if (longest.filtered[i].date === date) return i;
     }
-  });
-  areaD += " L" + (padL + (filtered.length - 1) * xStep) + "," + (padT + innerH) + " Z";
+    return -1;
+  };
 
-  svg.appendChild(svgEl("path", { d: areaD, class: "chart-line-area" }));
-  svg.appendChild(svgEl("path", { d, class: "chart-line" }));
+  for (const s of series) {
+    let d = "";
+    let areaD = "";
+    const isPrimary = s === series[0];
+    s.filtered.forEach((p, i) => {
+      const idx = indexFor(p.date);
+      const x = padL + (idx >= 0 ? idx : i) * xStep;
+      const y = padT + innerH - ((p.value - lo) / range) * innerH;
+      if (i === 0) {
+        d += "M" + x + "," + y;
+        areaD += "M" + x + "," + (padT + innerH) + " L" + x + "," + y;
+      } else {
+        d += " L" + x + "," + y;
+        areaD += " L" + x + "," + y;
+      }
+    });
+    const lastIdx = indexFor(s.filtered[s.filtered.length - 1].date);
+    areaD += " L" + (padL + (lastIdx >= 0 ? lastIdx : s.filtered.length - 1) * xStep) + "," + (padT + innerH) + " Z";
 
-  filtered.forEach((p, i) => {
-    const x = padL + i * xStep;
-    const y = padT + innerH - ((p.value - lo) / range) * innerH;
-    const c = svgEl("circle", { cx: x, cy: y, r: 2.5, class: "chart-dot" });
-    const title = svgEl("title");
-    title.textContent = fmtDate(p.date) + ": " + (options.yFmt ? options.yFmt(p.value) : p.value);
-    c.appendChild(title);
-    svg.appendChild(c);
-  });
+    if (isPrimary) {
+      const areaPath = svgEl("path", { d: areaD, class: "chart-line-area" });
+      if (s.color) areaPath.setAttribute("fill", s.color), areaPath.setAttribute("opacity", "0.18");
+      svg.appendChild(areaPath);
+    }
+    const linePath = svgEl("path", { d, class: "chart-line" });
+    if (s.color) linePath.setAttribute("stroke", s.color);
+    svg.appendChild(linePath);
 
-  if (filtered.length >= 2) {
+    s.filtered.forEach((p) => {
+      const idx = indexFor(p.date);
+      const x = padL + (idx >= 0 ? idx : 0) * xStep;
+      const y = padT + innerH - ((p.value - lo) / range) * innerH;
+      const c = svgEl("circle", { cx: x, cy: y, r: 2.5, class: "chart-dot" });
+      if (s.color) c.setAttribute("fill", s.color);
+      const title = svgEl("title");
+      const prefix = s.name ? (s.name + " ") : "";
+      title.textContent = fmtDate(p.date) + ": " + prefix + (options.yFmt ? options.yFmt(p.value) : p.value);
+      c.appendChild(title);
+      svg.appendChild(c);
+    });
+  }
+
+  if (longest.filtered.length >= 2) {
     const first = svgEl("text", { x: padL, y: H - 6, class: "chart-axis-label" });
-    first.textContent = fmtDate(filtered[0].date);
+    first.textContent = fmtDate(longest.filtered[0].date);
     svg.appendChild(first);
     const last = svgEl("text", { x: W - padR, y: H - 6, "text-anchor": "end", class: "chart-axis-label" });
-    last.textContent = fmtDate(filtered[filtered.length - 1].date);
+    last.textContent = fmtDate(longest.filtered[longest.filtered.length - 1].date);
     svg.appendChild(last);
   }
 
