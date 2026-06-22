@@ -75,9 +75,17 @@ header.topbar h1 {
 header.topbar p.sub {
   margin:2px 0 0; font-size:12px; color:var(--ink-soft);
 }
+header.topbar .topbar-center {
+  display:flex; flex-direction:column; min-width:0;
+}
+header.topbar .topbar-sync {
+  display:inline-flex; align-items:center; gap:6px;
+  font-size:13px;
+}
 .topbar-right {
   margin-left:auto;
   display:flex; align-items:center; gap:10px;
+  flex-shrink:0;
 }
 
 .sync-dot {
@@ -265,6 +273,54 @@ body.editing .card::before {
   width:100%; height:auto; display:block;
 }
 
+.intensity-row {
+  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+  margin-top:4px;
+}
+.intensity-value {
+  font-size:32px; font-weight:800; line-height:1; color:var(--ink);
+}
+.intensity-value .unit {
+  font-size:13px; font-weight:600; color:var(--ink-soft); margin-left:4px;
+}
+.intensity-goal-label {
+  font-size:13px; color:var(--ink-soft); font-weight:600;
+}
+.intensity-progress { height:10px; margin-top:10px; }
+.intensity-progress.goal-met > span {
+  background:linear-gradient(90deg, var(--good), #2e8b50);
+}
+.intensity-days {
+  display:grid;
+  grid-template-columns:repeat(7, minmax(0, 1fr));
+  gap:6px;
+  margin-top:12px;
+}
+.im-day {
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  min-width:0;
+}
+.im-day .im-bar-track {
+  position:relative; width:100%; height:48px;
+  background:var(--line); border-radius:4px; overflow:hidden;
+  display:flex; align-items:flex-end;
+}
+.im-day .im-bar-fill {
+  width:100%;
+  background:linear-gradient(180deg, var(--accent), var(--accent-2));
+  border-radius:4px 4px 0 0;
+  min-height:2px;
+}
+.im-day.today .im-bar-fill {
+  background:linear-gradient(180deg, #ff8a3d, #d9590a);
+}
+.im-day .im-lbl {
+  font-size:11px; color:var(--ink-soft); font-weight:600;
+}
+.im-day .im-num {
+  font-size:11px; color:var(--ink); font-weight:700;
+}
+
 .sleep-bar {
   display:flex; height:18px; border-radius:6px; overflow:hidden;
   border:1px solid var(--line); margin-top:8px;
@@ -377,7 +433,6 @@ body.editing .card::before {
   header.topbar .crest { width:42px; height:42px; border-radius:10px; }
   header.topbar .crest svg { width:28px; height:28px; }
   header.topbar h1 { font-size:1.15rem; }
-  #sync-status { display:none; }
   nav.tabs { padding:4px; gap:3px; }
   nav.tabs button { padding:8px 8px; font-size:12px; }
   .card { padding:12px; margin-bottom:10px; }
@@ -409,14 +464,15 @@ body.editing .card::before {
               stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </div>
-    <div>
+    <div class="topbar-center">
       <h1>Garmin Tracker</h1>
-      <p class="sub">Watch data synced from Garmin Connect</p>
+      <p class="sub topbar-sync">
+        <span id="sync-status-dot" class="sync-dot off" aria-hidden="true"></span>
+        <span id="sync-status">Sync: starting…</span>
+      </p>
     </div>
     <div class="topbar-right">
       <button id="btn-sync" class="btn ghost small" title="Trigger a sync now">🔄 Sync</button>
-      <span id="sync-status-dot" class="sync-dot off" aria-hidden="true"></span>
-      <span id="sync-status">Sync: starting…</span>
     </div>
   </header>
 
@@ -434,7 +490,6 @@ body.editing .card::before {
 
   <section id="page-today" class="page active">
     <div class="card" data-key="stats">
-      <p class="muted" id="today-subtitle">Waiting for first sync…</p>
       <div class="stats-grid" id="stats-grid"></div>
     </div>
 
@@ -448,14 +503,19 @@ body.editing .card::before {
       <div class="hr-gauge" id="hr-gauge"></div>
     </div>
 
+    <div class="card" data-key="intensity">
+      <h3>🔥 Intensity minutes <span class="muted" id="intensity-window">(7-day)</span></h3>
+      <div class="intensity-row">
+        <div class="intensity-value" id="intensity-value">—</div>
+        <div class="intensity-goal-label" id="intensity-goal">of 140</div>
+      </div>
+      <div class="progress intensity-progress"><span id="intensity-bar"></span></div>
+      <div class="intensity-days" id="intensity-days"></div>
+    </div>
+
     <div class="card" data-key="sleep">
       <h3>😴 Last night's sleep</h3>
       <div id="sleep-content" class="empty">No sleep data yet.</div>
-    </div>
-
-    <div class="card" data-key="today-activities">
-      <h3>🏃 Today's activities</h3>
-      <div id="today-activities" class="empty">No activities today.</div>
     </div>
   </section>
 
@@ -831,15 +891,9 @@ function activityIcon(type) {
 function renderToday() {
   const today = (state && state.today) || {};
 
-  const last = state && state.lastSyncIso ? new Date(state.lastSyncIso) : null;
-  $("#today-subtitle").textContent = last
-    ? "Last sync " + last.toLocaleString()
-    : "Waiting for first sync…";
-
   const goal = (state && state.profile && state.profile.goalSteps) || DEFAULT_STEP_GOAL;
   const steps = today.steps;
   const stepPct = steps ? Math.min(100, Math.round((steps / goal) * 100)) : 0;
-  const sleep = (state && state.sleep) || {};
 
   const tiles = [
     {
@@ -850,16 +904,10 @@ function renderToday() {
       accent: true
     },
     {
-      lbl: "Sleep",
-      val: fmtDurationMin(sleep.totalMin),
-      sub: sleep.score ? ("Score " + sleep.score) : null
-    },
-    {
       lbl: "Calories",
       val: fmtNum(today.totalCalories),
       sub: today.activeCalories ? (fmtNum(today.activeCalories) + " active") : null
-    },
-    { lbl: "Distance", val: fmtDistanceKm(today.distanceM) }
+    }
   ];
 
   const grid = $("#stats-grid");
@@ -881,16 +929,15 @@ function renderToday() {
   }
 
   renderHeartRate();
+  renderIntensity();
   renderSleep();
-  renderTodayActivities();
 }
 
 const HR_ZONES = [
-  { min: 40,  max: 90,  color: "#3a86ff", label: "Recovery" },
-  { min: 90,  max: 110, color: "#52b788", label: "Light" },
-  { min: 110, max: 130, color: "#ffb627", label: "Moderate" },
-  { min: 130, max: 150, color: "#fb8500", label: "Vigorous" },
-  { min: 150, max: 180, color: "#a63446", label: "Peak" }
+  { min: 40,  max: 90,  color: "#52b788", label: "Resting" },
+  { min: 90,  max: 110, color: "#ffb627", label: "Moderate" },
+  { min: 110, max: 130, color: "#fb8500", label: "Aerobic" },
+  { min: 130, max: 150, color: "#a63446", label: "High intensity" }
 ];
 
 function renderHeartRate() {
@@ -900,7 +947,7 @@ function renderHeartRate() {
   const hrRest = today.restingHR;
 
   const RANGE_MIN = 40;
-  const RANGE_MAX = 180;
+  const RANGE_MAX = 150;
   const W = 500;
   const PAD = 24;
   const H = 76;
@@ -959,7 +1006,7 @@ function renderHeartRate() {
   }));
 
   // Tick marks and labels
-  const ticks = [40, 90, 110, 130, 150, 180];
+  const ticks = [40, 90, 110, 130, 150];
   for (const t of ticks) {
     const tx = x(t);
     svg.appendChild(svgEl("line", {
@@ -1008,6 +1055,56 @@ function renderHeartRate() {
   gaugeEl.appendChild(svg);
 }
 
+function renderIntensity() {
+  const im = (state && state.intensity) || null;
+  const valEl = $("#intensity-value");
+  const goalLbl = $("#intensity-goal");
+  const winLbl = $("#intensity-window");
+  const bar = $("#intensity-bar");
+  const daysEl = $("#intensity-days");
+  if (!im) {
+    valEl.textContent = "—";
+    goalLbl.textContent = "of 140";
+    bar.style.width = "0%";
+    daysEl.innerHTML = "";
+    return;
+  }
+  const goal = im.goal || 140;
+  const total = im.totalMinutes || 0;
+  const pct = Math.min(100, goal > 0 ? Math.round((total / goal) * 100) : 0);
+  const windowDays = im.windowDays || 7;
+
+  winLbl.textContent = "(" + windowDays + "-day)";
+  valEl.innerHTML = "";
+  valEl.appendChild(document.createTextNode(String(total)));
+  valEl.appendChild(el("span", { class: "unit" }, "min"));
+  goalLbl.textContent = "of " + goal + " min · " + pct + "%";
+  bar.style.width = pct + "%";
+  bar.parentElement.classList.toggle("goal-met", total >= goal);
+
+  const days = Array.isArray(im.days) ? im.days : [];
+  const maxDay = Math.max(1, ...days.map(d => d.minutes || 0));
+  const todayStr = new Date().toISOString().slice(0, 10);
+  daysEl.innerHTML = "";
+  for (const d of days) {
+    const mins = d.minutes || 0;
+    const h = Math.max(2, Math.round((mins / maxDay) * 48));
+    const isToday = d.date === todayStr;
+    const dayLabel = (() => {
+      const dt = new Date(d.date + "T00:00:00");
+      return isToday ? "Today" : dt.toLocaleDateString(undefined, { weekday: "short" });
+    })();
+    const cell = el("div", { class: "im-day" + (isToday ? " today" : "") },
+      el("div", { class: "im-num" }, String(mins)),
+      el("div", { class: "im-bar-track" },
+        el("div", { class: "im-bar-fill", style: "height:" + h + "px" })
+      ),
+      el("div", { class: "im-lbl" }, dayLabel)
+    );
+    daysEl.appendChild(cell);
+  }
+}
+
 function renderSleep() {
   const s = (state && state.sleep) || null;
   const c = $("#sleep-content");
@@ -1044,22 +1141,6 @@ function renderSleep() {
 
   if (s.score) {
     c.appendChild(el("div", { class: "muted sleep-score" }, "Sleep score " + s.score));
-  }
-}
-
-function renderTodayActivities() {
-  const today = state && state.today && state.today.date;
-  const acts = (state && state.activities ? state.activities : []).filter(a => a.date === today);
-  const c = $("#today-activities");
-  if (acts.length === 0) {
-    c.className = "empty";
-    c.textContent = "No activities today.";
-    return;
-  }
-  c.className = "act-list";
-  c.innerHTML = "";
-  for (const a of acts) {
-    c.appendChild(activityRow(a));
   }
 }
 

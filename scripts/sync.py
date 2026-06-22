@@ -49,6 +49,8 @@ PROFILE_ID = os.getenv("GARMIN_PROFILE_ID", "default")
 HISTORY_DAYS = int(os.getenv("GARMIN_HISTORY_DAYS", "30"))
 ACTIVITY_LIMIT = int(os.getenv("GARMIN_ACTIVITY_LIMIT", "20"))
 STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "7000"))
+INTENSITY_GOAL = int(os.getenv("GARMIN_INTENSITY_GOAL", "140"))
+INTENSITY_DAYS = 7
 
 
 def _firestore() -> firestore.Client:
@@ -134,6 +136,40 @@ def _collect_sleep(client: Garmin) -> dict[str, Any]:
     }
 
 
+def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
+    """Collect today + previous (days-1) days of intensity minutes.
+
+    Garmin's standard scoring: each moderate-intensity minute counts as 1
+    and each vigorous-intensity minute counts as 2.
+    """
+    out_days: list[dict[str, Any]] = []
+    today = date.today()
+    for offset in range(days):
+        d = today - timedelta(days=offset)
+        d_str = d.isoformat()
+        try:
+            im = client.get_intensity_minutes_data(d_str) or {}
+        except Exception as e:
+            logger.warning("Intensity fetch failed for %s: %s", d_str, e)
+            im = {}
+        moderate = int(im.get("moderateValue") or 0)
+        vigorous = int(im.get("vigorousValue") or 0)
+        out_days.append({
+            "date": d_str,
+            "moderate": moderate,
+            "vigorous": vigorous,
+            "minutes": moderate + 2 * vigorous,
+        })
+    out_days.sort(key=lambda x: x["date"])
+    total = sum(d["minutes"] for d in out_days)
+    return {
+        "days": out_days,
+        "totalMinutes": total,
+        "goal": goal,
+        "windowDays": days,
+    }
+
+
 def _collect_history(client: Garmin, days: int) -> list[dict[str, Any]]:
     history: list[dict[str, Any]] = []
     today = date.today()
@@ -201,6 +237,7 @@ def run_sync() -> dict[str, Any]:
         "profile": _profile(client),
         "today": _collect_today(client),
         "sleep": _collect_sleep(client),
+        "intensity": _collect_intensity(client, INTENSITY_DAYS, INTENSITY_GOAL),
         "history": _collect_history(client, HISTORY_DAYS),
         "activities": _collect_activities(client, ACTIVITY_LIMIT),
         "lastSyncIso": datetime.now(timezone.utc).isoformat(),
