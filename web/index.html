@@ -157,6 +157,28 @@ nav.tabs button.active {
   box-shadow:0 4px 12px rgba(21, 81, 138, .28);
 }
 
+.range-selector {
+  display:flex; gap:6px;
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:12px; padding:4px; box-shadow:var(--shadow);
+  margin-bottom:12px;
+}
+.range-selector button {
+  flex:1 1 0; padding:8px 10px;
+  border:1px solid transparent; border-radius:8px;
+  background:transparent; color:var(--ink);
+  font-family:inherit; font-weight:600; font-size:13px;
+  cursor:pointer; transition:.15s;
+  white-space:nowrap;
+}
+.range-selector button:hover { background:var(--accent-soft); }
+.range-selector button.active {
+  color:#fff;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color:var(--accent-2);
+  box-shadow:0 2px 8px rgba(21, 81, 138, .22);
+}
+
 .page { display:none; }
 .page.active { display:block; }
 
@@ -520,16 +542,21 @@ body.editing .card::before {
   </section>
 
   <section id="page-trends" class="page">
+    <div class="range-selector" id="trend-range" role="tablist">
+      <button type="button" data-range="7">7 days</button>
+      <button type="button" data-range="30" class="active">30 days</button>
+      <button type="button" data-range="365">1 year</button>
+    </div>
     <div class="card" data-key="trend-steps">
-      <h3>👣 Steps — last 30 days</h3>
+      <h3 id="trend-steps-title">👣 Steps — last 30 days</h3>
       <div class="chart-wrap" id="chart-steps"></div>
     </div>
     <div class="card" data-key="trend-resting">
-      <h3>❤️ Resting heart rate — last 30 days</h3>
+      <h3 id="trend-resting-title">❤️ Resting heart rate — last 30 days</h3>
       <div class="chart-wrap" id="chart-resting"></div>
     </div>
     <div class="card" data-key="trend-sleep">
-      <h3>🌙 Sleep — last 30 days</h3>
+      <h3 id="trend-sleep-title">🌙 Sleep — last 30 days</h3>
       <div class="chart-wrap" id="chart-sleep"></div>
     </div>
   </section>
@@ -620,6 +647,7 @@ const LS_DATA = "garminTracker.v1.data";
 const LS_FUNC_URL = "garminTracker.v1.funcUrl"; // legacy, no longer used
 const LS_FUNC_KEY = "garminTracker.v1.funcKey"; // legacy, no longer used
 const LS_GH_PAT = "garminTracker.v1.ghPat";
+const LS_TREND_RANGE = "garminTracker.v1.trendRange";
 
 // GitHub Actions sync configuration (hard-coded — the workflow lives in this repo)
 const GH_OWNER = "JuliasStuff";
@@ -629,6 +657,11 @@ const GH_REF = "main";
 
 const DEFAULT_STEP_GOAL = 7000;
 const DEFAULT_CALORIE_GOAL = 2300;
+const TREND_RANGE_OPTIONS = [7, 30, 365];
+let TREND_RANGE = (() => {
+  const stored = parseInt(localStorage.getItem(LS_TREND_RANGE), 10);
+  return TREND_RANGE_OPTIONS.indexOf(stored) >= 0 ? stored : 30;
+})();
 
 // DOM helpers
 const $ = (sel, root) => (root || document).querySelector(sel);
@@ -1214,14 +1247,28 @@ function renderActivities() {
 function renderTrends() {
   const history = (state && state.history ? state.history : []).slice();
   history.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-  const last30 = history.slice(-30);
+  const days = TREND_RANGE;
+  const windowed = history.slice(-days);
   const goal = (state && state.profile && state.profile.goalSteps) || DEFAULT_STEP_GOAL;
 
-  renderBarChart($("#chart-steps"), last30.map(d => ({ date: d.date, value: d.steps || 0 })),
+  const labels = {
+    7: "last 7 days",
+    30: "last 30 days",
+    365: "last year"
+  };
+  const lbl = labels[days] || ("last " + days + " days");
+  const stepsTitle = $("#trend-steps-title");
+  const restingTitle = $("#trend-resting-title");
+  const sleepTitle = $("#trend-sleep-title");
+  if (stepsTitle) stepsTitle.textContent = "\ud83d\udc63 Steps \u2014 " + lbl;
+  if (restingTitle) restingTitle.textContent = "\u2764\ufe0f Resting heart rate \u2014 " + lbl;
+  if (sleepTitle) sleepTitle.textContent = "\ud83c\udf19 Sleep \u2014 " + lbl;
+
+  renderBarChart($("#chart-steps"), windowed.map(d => ({ date: d.date, value: d.steps || 0 })),
                  { goal, yFmt: fmtNum });
-  renderLineChart($("#chart-resting"), last30.map(d => ({ date: d.date, value: d.restingHR })),
+  renderLineChart($("#chart-resting"), windowed.map(d => ({ date: d.date, value: d.restingHR })),
                   { yFmt: v => v + " bpm" });
-  renderBarChart($("#chart-sleep"), last30.map(d => ({ date: d.date, value: d.sleepMin || 0 })),
+  renderBarChart($("#chart-sleep"), windowed.map(d => ({ date: d.date, value: d.sleepMin || 0 })),
                  { goal: 7 * 60, yFmt: v => fmtDurationMin(v) });
 }
 
@@ -1425,6 +1472,21 @@ function switchTab(tab) {
   });
 }
 
+function bindTrendRange() {
+  const buttons = $$("#trend-range button");
+  buttons.forEach(b => {
+    const r = parseInt(b.dataset.range, 10);
+    b.classList.toggle("active", r === TREND_RANGE);
+    b.addEventListener("click", () => {
+      if (r === TREND_RANGE) return;
+      TREND_RANGE = r;
+      localStorage.setItem(LS_TREND_RANGE, String(r));
+      buttons.forEach(x => x.classList.toggle("active", parseInt(x.dataset.range, 10) === TREND_RANGE));
+      renderTrends();
+    });
+  });
+}
+
 // Setup handlers
 function bindSetup() {
   $("#btn-save-func").addEventListener("click", () => {
@@ -1538,6 +1600,7 @@ function renderAll() {
 
 function init() {
   bindTabs();
+  bindTrendRange();
   bindSetup();
   renderAll();
   applyAllOrders();

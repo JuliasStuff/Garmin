@@ -13,7 +13,7 @@ Optional overrides:
 
     FIREBASE_COLLECTION             default "garminTrackers"
     GARMIN_PROFILE_ID               default "default"
-    GARMIN_HISTORY_DAYS             default 30
+    GARMIN_HISTORY_DAYS             default 365
     GARMIN_ACTIVITY_LIMIT           default 20
     GARMIN_STEP_GOAL                default 7000
 """
@@ -46,7 +46,7 @@ def _required(name: str) -> str:
 
 FIREBASE_COLLECTION = os.getenv("FIREBASE_COLLECTION", "garminTrackers")
 PROFILE_ID = os.getenv("GARMIN_PROFILE_ID", "default")
-HISTORY_DAYS = int(os.getenv("GARMIN_HISTORY_DAYS", "30"))
+HISTORY_DAYS = int(os.getenv("GARMIN_HISTORY_DAYS", "365"))
 ACTIVITY_LIMIT = int(os.getenv("GARMIN_ACTIVITY_LIMIT", "20"))
 STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "7000"))
 CALORIE_GOAL = int(os.getenv("GARMIN_CALORIE_GOAL", "2300"))
