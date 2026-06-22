@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: garmin-tracker
+metadata:
+  template: garmin-tracker@1.0.0
+infra:
+  provider: bicep
+  path: infra
+  module: main
+services:
+  api:
+    project: ./api
+    language: python
+    host: function
+  web:
+    project: ./web
+    dist: .
+    host: staticwebapp

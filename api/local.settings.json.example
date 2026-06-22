@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "KEY_VAULT_URI": "https://your-kv-name.vault.azure.net/",
+    "FIREBASE_COLLECTION": "garminTrackers",
+    "GARMIN_PROFILE_ID": "default"
+  }
+}

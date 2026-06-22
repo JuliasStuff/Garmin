@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Garmin Tracker</title>
+<meta name="theme-color" content="#1f6db8" />
+<meta name="description" content="Personal Garmin watch data synced to your phone." />
+
+<!-- PWA / install -->
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Garmin" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="application-name" content="Garmin Tracker" />
+
+<style>
+:root {
+  --bg:#f6f3ec;
+  --panel:#ffffff;
+  --panel-2:#eef1f5;
+  --ink:#1b2a3b;
+  --ink-soft:#5b6b80;
+  --line:#c8d2df;
+  --accent:#1f6db8;
+  --accent-2:#15518a;
+  --accent-soft:#dbe7f4;
+  --warm:#c98a4b;
+  --good:#4caf6a;
+  --bad:#d94a4a;
+  --shadow:0 4px 14px rgba(20,40,70,.10);
+}
+* { box-sizing:border-box; }
+html, body {
+  margin:0; padding:0; min-height:100%;
+  background:
+    radial-gradient(900px 500px at 90% -10%, rgba(31,109,184,.16), transparent 60%),
+    radial-gradient(700px 400px at -10% 110%, rgba(76,175,106,.10), transparent 60%),
+    var(--bg);
+  color:var(--ink);
+  font-family:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+}
+.app {
+  max-width:1100px; margin:0 auto; padding:16px;
+  padding-left:max(16px, env(safe-area-inset-left));
+  padding-right:max(16px, env(safe-area-inset-right));
+  padding-bottom:max(16px, env(safe-area-inset-bottom));
+}
+
+header.topbar {
+  display:flex; align-items:center; gap:14px;
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:14px; padding:12px 18px; box-shadow:var(--shadow);
+  margin-bottom:14px;
+}
+header.topbar .crest {
+  width:54px; height:54px; border-radius:14px;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  color:#fff; display:flex; align-items:center; justify-content:center;
+  box-shadow:inset 0 -3px 0 rgba(0,0,0,.12);
+  flex-shrink:0;
+}
+header.topbar .crest svg { width:36px; height:36px; display:block; }
+header.topbar h1 {
+  margin:0; font-size:clamp(1.4rem, 2.5vw, 1.85rem); line-height:1.1;
+}
+header.topbar p.sub {
+  margin:2px 0 0; font-size:12px; color:var(--ink-soft);
+}
+.topbar-right {
+  margin-left:auto;
+  display:flex; align-items:center; gap:10px;
+}
+
+.sync-dot {
+  width:10px; height:10px; border-radius:50%;
+  background:#bbb; display:inline-block;
+  box-shadow:0 0 0 2px rgba(255,255,255,.6);
+  transition:background .25s;
+}
+.sync-dot.off       { background:#bbb; }
+.sync-dot.connecting{ background:var(--warm); animation:pulse 1.2s infinite; }
+.sync-dot.connected { background:var(--good); }
+.sync-dot.error     { background:var(--bad); }
+@keyframes pulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%     { opacity:.55; transform:scale(.85); }
+}
+#sync-status { font-size:13px; color:var(--ink-soft); }
+
+button.btn {
+  border:0; border-radius:10px; padding:9px 14px;
+  cursor:pointer; font-weight:600; font-size:14px;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  color:#fff; box-shadow:inset 0 -2px 0 rgba(0,0,0,.12);
+  font-family:inherit;
+}
+button.btn:hover { filter:brightness(1.05); }
+button.btn:disabled { opacity:.55; cursor:not-allowed; filter:none; }
+button.btn.ghost {
+  background:var(--panel-2); color:var(--ink);
+  box-shadow:inset 0 -2px 0 rgba(0,0,0,.04);
+  border:1px solid var(--line);
+}
+button.btn.danger { background:#b94a4a; color:#fff; }
+button.btn.small  { padding:6px 10px; font-size:12px; }
+
+#setup-banner {
+  display:none;
+  background:#fff4dc; border:1px solid #f0d08a; color:#7a5b1e;
+  border-radius:10px; padding:10px 14px; margin-bottom:12px;
+  font-size:13px;
+}
+#setup-banner strong { color:#5a4012; }
+#setup-banner a { color:var(--accent-2); font-weight:600; }
+#setup-banner code {
+  background:rgba(0,0,0,.06); padding:1px 5px; border-radius:4px;
+}
+
+nav.tabs {
+  display:flex; gap:6px;
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:14px; padding:6px; box-shadow:var(--shadow);
+  margin-bottom:14px;
+  overflow-x:auto;
+}
+nav.tabs button {
+  flex:1 1 auto; min-width:90px;
+  padding:10px 14px; border:1px solid transparent; cursor:pointer;
+  background:transparent; color:var(--ink);
+  border-radius:10px; font-weight:600; font-size:14px;
+  font-family:inherit;
+  transition:.15s;
+  white-space:nowrap;
+}
+nav.tabs button:hover { background:var(--accent-soft); }
+nav.tabs button.active {
+  color:#fff;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  border-color:var(--accent-2);
+  box-shadow:0 4px 12px rgba(21, 81, 138, .28);
+}
+
+.page { display:none; }
+.page.active { display:block; }
+
+.card {
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:14px; padding:16px; box-shadow:var(--shadow);
+  margin-bottom:14px;
+}
+.card h2 { margin:0 0 12px; font-size:18px; }
+.card h3 { margin:0 0 10px; font-size:15px; }
+.muted { color:var(--ink-soft); font-size:13px; }
+
+.stats-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+  gap:10px;
+}
+.stat-tile {
+  background:var(--panel-2);
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:14px;
+  display:flex; flex-direction:column; gap:4px;
+}
+.stat-tile.accent {
+  background:linear-gradient(135deg, var(--accent-soft), #fff);
+  border-color:var(--accent);
+}
+.stat-tile .st-lbl {
+  font-size:11px; color:var(--ink-soft);
+  text-transform:uppercase; letter-spacing:.06em;
+  font-weight:700;
+}
+.stat-tile .st-val {
+  font-size:28px; font-weight:800; line-height:1;
+  color:var(--ink);
+}
+.stat-tile .st-val .unit {
+  font-size:14px; font-weight:600; color:var(--ink-soft); margin-left:4px;
+}
+.stat-tile .st-sub {
+  font-size:12px; color:var(--ink-soft);
+  margin-top:2px;
+}
+.progress {
+  height:6px; background:var(--line); border-radius:999px; overflow:hidden;
+  margin-top:6px;
+}
+.progress > span {
+  display:block; height:100%;
+  background:linear-gradient(90deg, var(--accent), var(--accent-2));
+  border-radius:999px;
+}
+
+.sleep-bar {
+  display:flex; height:18px; border-radius:6px; overflow:hidden;
+  border:1px solid var(--line); margin-top:8px;
+}
+.sleep-bar > span { display:block; }
+.sleep-legend {
+  display:flex; flex-wrap:wrap; gap:10px 14px;
+  font-size:12px; color:var(--ink-soft); margin-top:8px;
+}
+.sleep-legend .key {
+  display:inline-flex; align-items:center; gap:5px;
+}
+.sleep-legend .sw {
+  width:10px; height:10px; border-radius:3px; display:inline-block;
+}
+
+.act-list { display:flex; flex-direction:column; gap:8px; }
+.act-row {
+  display:flex; align-items:center; gap:12px;
+  padding:10px 12px;
+  background:var(--panel-2); border:1px solid var(--line);
+  border-radius:10px;
+  border-left:4px solid var(--accent);
+}
+.act-row .a-icon {
+  font-size:22px; flex-shrink:0;
+  width:34px; text-align:center;
+}
+.act-row .a-body { flex:1; min-width:0; }
+.act-row .a-title {
+  font-weight:700; font-size:14px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.act-row .a-meta {
+  font-size:12px; color:var(--ink-soft);
+  display:flex; flex-wrap:wrap; gap:4px 12px; margin-top:2px;
+}
+.act-month-hd {
+  font-size:12px; font-weight:700; color:var(--ink-soft);
+  text-transform:uppercase; letter-spacing:.06em;
+  padding:8px 4px 4px;
+}
+
+.chart-wrap { position:relative; width:100%; }
+.chart-wrap svg { display:block; width:100%; height:auto; }
+.chart-axis-label { font-size:11px; fill:var(--ink-soft); }
+.chart-bar { fill:var(--accent); }
+.chart-bar.hit-goal { fill:var(--good); }
+.chart-line {
+  fill:none; stroke:var(--accent); stroke-width:2;
+  stroke-linejoin:round; stroke-linecap:round;
+}
+.chart-line-area { fill:var(--accent-soft); opacity:.55; }
+.chart-dot { fill:var(--accent-2); }
+.chart-goal-line {
+  stroke:var(--bad); stroke-width:1; stroke-dasharray:4 3;
+}
+
+.field { margin-bottom:12px; }
+.field label {
+  display:block; font-size:12px; color:var(--ink-soft);
+  margin-bottom:4px; font-weight:700; letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.field input[type=text], .field input[type=url], .field input[type=password] {
+  width:100%;
+  background:#fff; color:var(--ink);
+  border:1px solid var(--line); border-radius:10px;
+  padding:9px 11px; font-size:14px; outline:none;
+  font-family:inherit;
+}
+.field input:focus {
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(31,109,184,.22);
+}
+.kv-row {
+  display:flex; align-items:center; gap:10px;
+  padding:6px 0; border-bottom:1px dashed var(--line);
+  font-size:13px;
+}
+.kv-row:last-child { border-bottom:0; }
+.kv-row .k { color:var(--ink-soft); flex:0 0 130px; }
+.kv-row .v { color:var(--ink); font-weight:600; flex:1; word-break:break-all; }
+
+.empty {
+  text-align:center; color:var(--ink-soft);
+  padding:18px; font-size:13px;
+}
+
+@media (max-width:780px) {
+  html, body { overflow-x:hidden; }
+  .app { padding:10px; padding-bottom:max(10px, env(safe-area-inset-bottom)); }
+  header.topbar { padding:10px 12px; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  header.topbar .crest { width:42px; height:42px; border-radius:10px; }
+  header.topbar .crest svg { width:28px; height:28px; }
+  header.topbar h1 { font-size:1.15rem; }
+  #sync-status { display:none; }
+  nav.tabs { padding:4px; gap:3px; }
+  nav.tabs button { padding:8px 8px; font-size:12px; }
+  .card { padding:12px; margin-bottom:10px; }
+  .stats-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+  .stat-tile { padding:11px; }
+  .stat-tile .st-val { font-size:22px; }
+  .field input { font-size:16px; }
+  button.btn { padding:10px 14px; font-size:14px; }
+}
+@media (max-width:430px) {
+  .app { padding:8px; }
+  nav.tabs button { padding:7px 6px; font-size:11px; }
+  .stat-tile .st-val { font-size:20px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="topbar">
+    <div class="crest" aria-hidden="true">
+      <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <rect x="22" y="2" width="20" height="7" rx="2" fill="#ffffff" opacity=".55"/>
+        <rect x="22" y="55" width="20" height="7" rx="2" fill="#ffffff" opacity=".55"/>
+        <rect x="13" y="11" width="38" height="42" rx="9" fill="none" stroke="#ffffff" stroke-width="3"/>
+        <path d="M18 33 L25 33 L29 24 L34 42 L38 30 L42 33 L47 33"
+              stroke="#ffffff" stroke-width="2.6" fill="none"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div>
+      <h1>Garmin Tracker</h1>
+      <p class="sub">Watch data synced from Garmin Connect</p>
+    </div>
+    <div class="topbar-right">
+      <button id="btn-sync" class="btn ghost small" title="Trigger a sync now">🔄 Sync</button>
+      <span id="sync-status-dot" class="sync-dot off" aria-hidden="true"></span>
+      <span id="sync-status">Sync: starting…</span>
+    </div>
+  </header>
+
+  <div id="setup-banner">
+    <strong>⚙️ First-time setup needed.</strong>
+    Edit <code>web/index.html</code> with your Firebase project's web config, then redeploy.
+    See the <a href="#" data-tab="setup">Setup tab</a> for details.
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="today" class="active">📊 Today</button>
+    <button data-tab="trends">📈 Trends</button>
+    <button data-tab="activities">🏃 Activities</button>
+    <button data-tab="setup">⚙️ Setup</button>
+  </nav>
+
+  <section id="page-today" class="page active">
+    <div class="card">
+      <h2 id="today-title">Today</h2>
+      <p class="muted" id="today-subtitle">Waiting for first sync…</p>
+      <div class="stats-grid" id="stats-grid"></div>
+    </div>
+
+    <div class="card">
+      <h3>😴 Last night's sleep</h3>
+      <div id="sleep-content" class="empty">No sleep data yet.</div>
+    </div>
+
+    <div class="card">
+      <h3>🏃 Today's activities</h3>
+      <div id="today-activities" class="empty">No activities today.</div>
+    </div>
+  </section>
+
+  <section id="page-trends" class="page">
+    <div class="card">
+      <h3>👣 Steps — last 30 days</h3>
+      <div class="chart-wrap" id="chart-steps"></div>
+    </div>
+    <div class="card">
+      <h3>❤️ Resting heart rate — last 30 days</h3>
+      <div class="chart-wrap" id="chart-resting"></div>
+    </div>
+    <div class="card">
+      <h3>🌙 Sleep — last 30 days</h3>
+      <div class="chart-wrap" id="chart-sleep"></div>
+    </div>
+  </section>
+
+  <section id="page-activities" class="page">
+    <div class="card">
+      <h3>Recent activities</h3>
+      <div id="activities-list" class="empty">No activities yet.</div>
+    </div>
+  </section>
+
+  <section id="page-setup" class="page">
+    <div class="card">
+      <h3>☁️ Firebase</h3>
+      <div class="kv-row"><div class="k">Status</div><div class="v" id="setup-fb-status">…</div></div>
+      <div class="kv-row"><div class="k">Project ID</div><div class="v" id="setup-fb-project">—</div></div>
+      <div class="kv-row"><div class="k">Document</div><div class="v" id="setup-fb-doc">—</div></div>
+      <p class="muted" style="margin-top:10px;">
+        To configure: edit <code>web/index.html</code> and paste the
+        <code>firebaseConfig</code> object from your Firebase console
+        (Project settings → Your apps → Web SDK setup → Config), then redeploy.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>🔄 Manual sync (GitHub Actions)</h3>
+      <p class="muted">
+        A GitHub Actions workflow syncs automatically every hour. The button triggers it on demand.
+        Requires a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained personal access token</a>
+        scoped to repo <code id="setup-gh-repo">—</code> with <strong>Actions: Read and write</strong>.
+      </p>
+      <div class="field">
+        <label for="cfg-gh-pat">GitHub PAT</label>
+        <input type="password" id="cfg-gh-pat" placeholder="github_pat_…" autocomplete="off" />
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" id="btn-save-func">Save</button>
+        <button class="btn ghost" id="btn-test-sync">Test sync</button>
+      </div>
+      <div id="func-status" class="muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>💾 Local cache</h3>
+      <div class="kv-row"><div class="k">Cached doc</div><div class="v" id="setup-cache-size">—</div></div>
+      <div class="kv-row"><div class="k">Last update</div><div class="v" id="setup-cache-time">—</div></div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button class="btn ghost" id="btn-clear-cache">Clear cache</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>ℹ️ About</h3>
+      <p class="muted">
+        Garmin Tracker is a personal PWA that displays watch data synced from
+        Garmin Connect by a small Azure Function. The Function runs every hour,
+        pulls your latest stats, sleep, and activities, and writes them to a
+        single Firestore document. This app reads that document live and
+        renders the views.
+      </p>
+    </div>
+  </section>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+// Firebase web config — replace with values from your Firebase console
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAWFOCPpq1tgIwauaRuxg4sVfOKTSMSFRE",
+  authDomain: "garmin-d1db5.firebaseapp.com",
+  projectId: "garmin-d1db5",
+  storageBucket: "garmin-d1db5.firebasestorage.app",
+  messagingSenderId: "183104375591",
+  appId: "1:183104375591:web:8b3bbf7419831fc6f3f702"
+};
+
+const FIREBASE_COLLECTION = "garminTrackers";
+const PROFILE_ID = "default";
+
+const LS_DATA = "garminTracker.v1.data";
+const LS_FUNC_URL = "garminTracker.v1.funcUrl"; // legacy, no longer used
+const LS_FUNC_KEY = "garminTracker.v1.funcKey"; // legacy, no longer used
+const LS_GH_PAT = "garminTracker.v1.ghPat";
+
+// GitHub Actions sync configuration (hard-coded — the workflow lives in this repo)
+const GH_OWNER = "JuliasStuff";
+const GH_REPO = "Garmin";
+const GH_WORKFLOW_FILE = "sync.yml";
+const GH_REF = "main";
+
+const DEFAULT_STEP_GOAL = 10000;
+
+// DOM helpers
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+function el(tag, props, ...children) {
+  const n = document.createElement(tag);
+  if (props) {
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "class") {
+        n.className = v;
+      } else if (k === "html") {
+        n.innerHTML = v;
+      } else if (k === "text") {
+        n.textContent = v;
+      } else if (k.startsWith("on") && typeof v === "function") {
+        n.addEventListener(k.slice(2), v);
+      } else if (v !== null && v !== undefined) {
+        n.setAttribute(k, v);
+      }
+    }
+  }
+  for (const c of children) {
+    if (c === null || c === undefined) {
+      continue;
+    }
+    n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  }
+  return n;
+}
+
+// State
+let state = loadLocal();
+
+function loadLocal() {
+  try {
+    const raw = localStorage.getItem(LS_DATA);
+    if (!raw) {
+      return null;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+function saveLocal(data) {
+  try {
+    localStorage.setItem(LS_DATA, JSON.stringify(data));
+  } catch (e) {
+    console.warn("Local cache save failed:", e);
+  }
+}
+
+// Sync indicator
+function setSyncDot(s) {
+  const dot = $("#sync-status-dot");
+  if (dot) {
+    dot.className = "sync-dot " + s;
+  }
+}
+function setSyncStatus(t) {
+  const node = $("#sync-status");
+  if (node) {
+    node.textContent = t;
+  }
+}
+function showSetupBanner(show) {
+  const b = $("#setup-banner");
+  if (b) {
+    b.style.display = show ? "block" : "none";
+  }
+}
+function isConfigPlaceholder(cfg) {
+  if (!cfg || !cfg.apiKey || !cfg.projectId) {
+    return true;
+  }
+  return cfg.apiKey.startsWith("REPLACE") || cfg.projectId.startsWith("REPLACE");
+}
+
+// Firebase
+function startFirebase() {
+  setSyncDot("connecting");
+  setSyncStatus("Sync: connecting…");
+  try {
+    const app = initializeApp(FIREBASE_CONFIG);
+    const db = getFirestore(app);
+    const ref = doc(db, FIREBASE_COLLECTION, PROFILE_ID);
+    onSnapshot(ref, (snap) => {
+      const data = snap.data();
+      if (!data) {
+        setSyncDot("connected");
+        setSyncStatus("Sync: connected • no data yet");
+        return;
+      }
+      state = data;
+      saveLocal(state);
+      setSyncDot("connected");
+      setSyncStatus("Sync: " + formatUpdated(data.updatedAt));
+      renderAll();
+    }, (err) => {
+      console.error("Firestore listen failed:", err);
+      setSyncDot("error");
+      setSyncStatus("Sync: error (using local data)");
+    });
+  } catch (e) {
+    console.error("Firebase init failed:", e);
+    setSyncDot("error");
+    setSyncStatus("Sync: init failed (using local data)");
+  }
+}
+
+function formatUpdated(ts) {
+  let d;
+  if (ts && typeof ts.toDate === "function") {
+    d = ts.toDate();
+  } else if (typeof ts === "string") {
+    d = new Date(ts);
+  } else {
+    return "connected";
+  }
+  const diff = (new Date() - d) / 1000;
+  if (diff < 60) {
+    return "just now";
+  }
+  if (diff < 3600) {
+    return Math.floor(diff / 60) + "m ago";
+  }
+  if (diff < 86400) {
+    return Math.floor(diff / 3600) + "h ago";
+  }
+  return d.toLocaleString();
+}
+
+// Manual sync (POST → GitHub Actions workflow_dispatch)
+async function manualSync() {
+  const pat = localStorage.getItem(LS_GH_PAT);
+  const btn = $("#btn-sync");
+  const status = $("#func-status");
+  if (!pat) {
+    alert("Set the GitHub PAT in the Setup tab first.");
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Syncing…";
+  }
+  if (status) {
+    status.textContent = "Dispatching GitHub Actions workflow…";
+  }
+  try {
+    const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE}/dispatches`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + pat,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ ref: GH_REF })
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error("HTTP " + res.status + ": " + body.slice(0, 200));
+    }
+    if (status) {
+      status.textContent = "Workflow dispatched. Watch progress at github.com/" + GH_OWNER + "/" + GH_REPO + "/actions — Firestore will update when it finishes (≈ 30–60s).";
+    }
+    if (btn) {
+      btn.textContent = "Dispatched ✓";
+      setTimeout(() => {
+        btn.textContent = "🔄 Sync";
+        btn.disabled = false;
+      }, 2500);
+    }
+  } catch (e) {
+    console.error(e);
+    if (status) {
+      status.textContent = "Failed: " + e.message;
+    }
+    if (btn) {
+      btn.textContent = "Failed";
+      setTimeout(() => {
+        btn.textContent = "🔄 Sync";
+        btn.disabled = false;
+      }, 2500);
+    }
+  }
+}
+
+// Formatting
+function fmtNum(n) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) {
+    return "—";
+  }
+  return Number(n).toLocaleString();
+}
+function fmtDurationMin(mins) {
+  if (mins === null || mins === undefined) {
+    return "—";
+  }
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  if (h) {
+    return h + "h " + m + "m";
+  }
+  return m + "m";
+}
+function fmtDurationSec(secs) {
+  if (secs === null || secs === undefined) {
+    return "—";
+  }
+  return fmtDurationMin(Math.round(secs / 60));
+}
+function fmtDistanceKm(meters) {
+  if (meters === null || meters === undefined) {
+    return "—";
+  }
+  return (meters / 1000).toFixed(2) + " km";
+}
+function fmtDate(d) {
+  if (!d) {
+    return "";
+  }
+  const dt = typeof d === "string" ? new Date(d + "T00:00:00") : d;
+  return dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+function activityIcon(type) {
+  const t = (type || "").toLowerCase();
+  if (t.includes("run")) {
+    return "🏃";
+  }
+  if (t.includes("cycl") || t.includes("bike")) {
+    return "🚴";
+  }
+  if (t.includes("walk")) {
+    return "🚶";
+  }
+  if (t.includes("hik")) {
+    return "🥾";
+  }
+  if (t.includes("swim")) {
+    return "🏊";
+  }
+  if (t.includes("strength") || t.includes("weight")) {
+    return "🏋️";
+  }
+  if (t.includes("yoga")) {
+    return "🧘";
+  }
+  if (t.includes("ski")) {
+    return "⛷️";
+  }
+  if (t.includes("row")) {
+    return "🚣";
+  }
+  return "⏱️";
+}
+
+// Render: Today
+function renderToday() {
+  const today = (state && state.today) || {};
+  $("#today-title").textContent = today.date ? fmtDate(today.date) : "Today";
+
+  const last = state && state.lastSyncIso ? new Date(state.lastSyncIso) : null;
+  $("#today-subtitle").textContent = last
+    ? "Last sync " + last.toLocaleString()
+    : "Waiting for first sync…";
+
+  const goal = (state && state.profile && state.profile.goalSteps) || DEFAULT_STEP_GOAL;
+  const steps = today.steps;
+  const stepPct = steps ? Math.min(100, Math.round((steps / goal) * 100)) : 0;
+  const sleep = (state && state.sleep) || {};
+
+  const tiles = [
+    {
+      lbl: "Steps",
+      val: fmtNum(steps),
+      sub: steps ? (stepPct + "% of " + fmtNum(goal)) : "—",
+      progress: stepPct,
+      accent: true
+    },
+    { lbl: "Resting HR", val: fmtNum(today.restingHR), unit: "bpm" },
+    {
+      lbl: "Sleep",
+      val: fmtDurationMin(sleep.totalMin),
+      sub: sleep.score ? ("Score " + sleep.score) : null
+    },
+    {
+      lbl: "Body Battery",
+      val: fmtNum(today.bodyBattery),
+      sub: today.stress !== undefined && today.stress !== null ? ("Stress " + today.stress) : null
+    },
+    {
+      lbl: "Calories",
+      val: fmtNum(today.totalCalories),
+      sub: today.activeCalories ? (fmtNum(today.activeCalories) + " active") : null
+    },
+    { lbl: "Distance", val: fmtDistanceKm(today.distanceM) }
+  ];
+
+  const grid = $("#stats-grid");
+  grid.innerHTML = "";
+  for (const t of tiles) {
+    const tile = el("div", { class: "stat-tile" + (t.accent ? " accent" : "") },
+      el("div", { class: "st-lbl", text: t.lbl }),
+      el("div", { class: "st-val", html: t.val + (t.unit ? '<span class="unit">' + t.unit + '</span>' : '') })
+    );
+    if (t.sub) {
+      tile.appendChild(el("div", { class: "st-sub", text: t.sub }));
+    }
+    if (t.progress !== undefined) {
+      tile.appendChild(el("div", { class: "progress" },
+        el("span", { style: "width:" + t.progress + "%" })
+      ));
+    }
+    grid.appendChild(tile);
+  }
+
+  renderSleep();
+  renderTodayActivities();
+}
+
+function renderSleep() {
+  const s = (state && state.sleep) || null;
+  const c = $("#sleep-content");
+  if (!s || !s.totalMin) {
+    c.className = "empty";
+    c.textContent = "No sleep data yet.";
+    return;
+  }
+  c.className = "";
+  c.innerHTML = "";
+
+  const segs = [
+    { color: "#2d4f80", lbl: "Deep",  mins: s.deepMin || 0 },
+    { color: "#7eb2dc", lbl: "Light", mins: s.lightMin || 0 },
+    { color: "#b58cd6", lbl: "REM",   mins: s.remMin || 0 },
+    { color: "#e0c98b", lbl: "Awake", mins: s.awakeMin || 0 }
+  ];
+  const total = s.totalMin || 1;
+
+  c.appendChild(el("div", { class: "muted" },
+    "Night of " + fmtDate(s.date) + " • " + fmtDurationMin(s.totalMin)
+      + (s.score ? " • score " + s.score : "")
+  ));
+
+  const bar = el("div", { class: "sleep-bar" });
+  for (const sg of segs) {
+    const pct = (sg.mins / total) * 100;
+    if (pct > 0) {
+      bar.appendChild(el("span", { style: "width:" + pct + "%; background:" + sg.color }));
+    }
+  }
+  c.appendChild(bar);
+
+  const legend = el("div", { class: "sleep-legend" });
+  for (const sg of segs) {
+    legend.appendChild(el("span", { class: "key" },
+      el("span", { class: "sw", style: "background:" + sg.color }),
+      sg.lbl + ": " + fmtDurationMin(sg.mins)
+    ));
+  }
+  c.appendChild(legend);
+}
+
+function renderTodayActivities() {
+  const today = state && state.today && state.today.date;
+  const acts = (state && state.activities ? state.activities : []).filter(a => a.date === today);
+  const c = $("#today-activities");
+  if (acts.length === 0) {
+    c.className = "empty";
+    c.textContent = "No activities today.";
+    return;
+  }
+  c.className = "act-list";
+  c.innerHTML = "";
+  for (const a of acts) {
+    c.appendChild(activityRow(a));
+  }
+}
+
+function activityRow(a) {
+  const meta = [];
+  if (a.startTime) {
+    meta.push(a.startTime);
+  }
+  if (a.durationSec) {
+    meta.push(fmtDurationSec(a.durationSec));
+  }
+  if (a.distanceM) {
+    meta.push(fmtDistanceKm(a.distanceM));
+  }
+  if (a.avgHR) {
+    meta.push("avg " + a.avgHR + " bpm");
+  }
+  if (a.calories) {
+    meta.push(fmtNum(a.calories) + " kcal");
+  }
+  return el("div", { class: "act-row" },
+    el("div", { class: "a-icon", text: activityIcon(a.type) }),
+    el("div", { class: "a-body" },
+      el("div", { class: "a-title", text: a.name || a.type || "Activity" }),
+      el("div", { class: "a-meta", text: meta.join(" • ") })
+    )
+  );
+}
+
+// Render: Activities tab
+function renderActivities() {
+  const acts = (state && state.activities ? state.activities : []).slice();
+  const c = $("#activities-list");
+  if (acts.length === 0) {
+    c.className = "empty";
+    c.textContent = "No activities yet.";
+    return;
+  }
+  acts.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  c.className = "act-list";
+  c.innerHTML = "";
+  let currentMonth = null;
+  for (const a of acts) {
+    const month = (a.date || "").slice(0, 7);
+    if (month && month !== currentMonth) {
+      currentMonth = month;
+      const [y, m] = month.split("-").map(Number);
+      const monthName = new Date(y, m - 1, 1).toLocaleDateString(undefined, {
+        month: "long", year: "numeric"
+      });
+      c.appendChild(el("div", { class: "act-month-hd", text: monthName }));
+    }
+    const displayName = fmtDate(a.date) + " — " + (a.name || a.type || "Activity");
+    c.appendChild(activityRow({ ...a, name: displayName }));
+  }
+}
+
+// Render: Trends (SVG charts)
+function renderTrends() {
+  const history = (state && state.history ? state.history : []).slice();
+  history.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const last30 = history.slice(-30);
+  const goal = (state && state.profile && state.profile.goalSteps) || DEFAULT_STEP_GOAL;
+
+  renderBarChart($("#chart-steps"), last30.map(d => ({ date: d.date, value: d.steps || 0 })),
+                 { goal, yFmt: fmtNum });
+  renderLineChart($("#chart-resting"), last30.map(d => ({ date: d.date, value: d.restingHR })),
+                  { yFmt: v => v + " bpm" });
+  renderBarChart($("#chart-sleep"), last30.map(d => ({ date: d.date, value: d.sleepMin || 0 })),
+                 { yFmt: v => fmtDurationMin(v) });
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag, attrs) {
+  const n = document.createElementNS(SVG_NS, tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      n.setAttribute(k, v);
+    }
+  }
+  return n;
+}
+
+function renderBarChart(container, points, options) {
+  options = options || {};
+  container.innerHTML = "";
+  if (!points || points.length === 0 || points.every(p => !p.value)) {
+    container.appendChild(el("div", { class: "empty", text: "Not enough data yet." }));
+    return;
+  }
+  const W = 600, H = 180, padL = 40, padR = 8, padT = 14, padB = 22;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const maxV = Math.max(options.goal || 0, ...points.map(p => p.value || 0)) || 1;
+  const barW = innerW / points.length;
+
+  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "none" });
+
+  const ticks = [0, Math.round(maxV / 2), maxV];
+  for (const t of ticks) {
+    const y = padT + innerH - (t / maxV) * innerH;
+    svg.appendChild(svgEl("line", {
+      x1: padL, x2: W - padR, y1: y, y2: y,
+      stroke: "#dde3ec", "stroke-width": "1"
+    }));
+    const tx = svgEl("text", {
+      x: padL - 4, y: y + 3,
+      "text-anchor": "end", class: "chart-axis-label"
+    });
+    tx.textContent = options.yFmt ? options.yFmt(t) : String(t);
+    svg.appendChild(tx);
+  }
+
+  if (options.goal) {
+    const y = padT + innerH - (options.goal / maxV) * innerH;
+    svg.appendChild(svgEl("line", {
+      x1: padL, x2: W - padR, y1: y, y2: y, class: "chart-goal-line"
+    }));
+  }
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const v = p.value || 0;
+    const h = (v / maxV) * innerH;
+    const x = padL + i * barW + 1;
+    const y = padT + innerH - h;
+    const rect = svgEl("rect", {
+      x, y,
+      width: Math.max(1, barW - 2),
+      height: h,
+      class: "chart-bar" + (options.goal && v >= options.goal ? " hit-goal" : ""),
+      rx: 1
+    });
+    const title = svgEl("title");
+    title.textContent = fmtDate(p.date) + ": " + (options.yFmt ? options.yFmt(v) : v);
+    rect.appendChild(title);
+    svg.appendChild(rect);
+  }
+
+  if (points.length >= 2) {
+    const first = svgEl("text", { x: padL, y: H - 6, class: "chart-axis-label" });
+    first.textContent = fmtDate(points[0].date);
+    svg.appendChild(first);
+    const last = svgEl("text", { x: W - padR, y: H - 6, "text-anchor": "end", class: "chart-axis-label" });
+    last.textContent = fmtDate(points[points.length - 1].date);
+    svg.appendChild(last);
+  }
+
+  container.appendChild(svg);
+}
+
+function renderLineChart(container, points, options) {
+  options = options || {};
+  container.innerHTML = "";
+  const filtered = points.filter(p => p.value !== null && p.value !== undefined);
+  if (filtered.length === 0) {
+    container.appendChild(el("div", { class: "empty", text: "Not enough data yet." }));
+    return;
+  }
+  const W = 600, H = 180, padL = 40, padR = 8, padT = 14, padB = 22;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const values = filtered.map(p => p.value);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const pad = (maxV - minV) * 0.15 || 1;
+  const lo = Math.floor(minV - pad);
+  const hi = Math.ceil(maxV + pad);
+  const range = hi - lo || 1;
+
+  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, preserveAspectRatio: "none" });
+
+  const ticks = [lo, Math.round((lo + hi) / 2), hi];
+  for (const t of ticks) {
+    const y = padT + innerH - ((t - lo) / range) * innerH;
+    svg.appendChild(svgEl("line", {
+      x1: padL, x2: W - padR, y1: y, y2: y,
+      stroke: "#dde3ec", "stroke-width": "1"
+    }));
+    const tx = svgEl("text", {
+      x: padL - 4, y: y + 3, "text-anchor": "end", class: "chart-axis-label"
+    });
+    tx.textContent = options.yFmt ? options.yFmt(t) : String(t);
+    svg.appendChild(tx);
+  }
+
+  const xStep = filtered.length > 1 ? innerW / (filtered.length - 1) : 0;
+  let d = "";
+  let areaD = "";
+  filtered.forEach((p, i) => {
+    const x = padL + i * xStep;
+    const y = padT + innerH - ((p.value - lo) / range) * innerH;
+    if (i === 0) {
+      d += "M" + x + "," + y;
+      areaD += "M" + x + "," + (padT + innerH) + " L" + x + "," + y;
+    } else {
+      d += " L" + x + "," + y;
+      areaD += " L" + x + "," + y;
+    }
+  });
+  areaD += " L" + (padL + (filtered.length - 1) * xStep) + "," + (padT + innerH) + " Z";
+
+  svg.appendChild(svgEl("path", { d: areaD, class: "chart-line-area" }));
+  svg.appendChild(svgEl("path", { d, class: "chart-line" }));
+
+  filtered.forEach((p, i) => {
+    const x = padL + i * xStep;
+    const y = padT + innerH - ((p.value - lo) / range) * innerH;
+    const c = svgEl("circle", { cx: x, cy: y, r: 2.5, class: "chart-dot" });
+    const title = svgEl("title");
+    title.textContent = fmtDate(p.date) + ": " + (options.yFmt ? options.yFmt(p.value) : p.value);
+    c.appendChild(title);
+    svg.appendChild(c);
+  });
+
+  if (filtered.length >= 2) {
+    const first = svgEl("text", { x: padL, y: H - 6, class: "chart-axis-label" });
+    first.textContent = fmtDate(filtered[0].date);
+    svg.appendChild(first);
+    const last = svgEl("text", { x: W - padR, y: H - 6, "text-anchor": "end", class: "chart-axis-label" });
+    last.textContent = fmtDate(filtered[filtered.length - 1].date);
+    svg.appendChild(last);
+  }
+
+  container.appendChild(svg);
+}
+
+// Render: Setup
+function renderSetup() {
+  if (isConfigPlaceholder(FIREBASE_CONFIG)) {
+    $("#setup-fb-status").textContent = "Not configured (placeholder values)";
+    $("#setup-fb-project").textContent = "—";
+  } else {
+    $("#setup-fb-status").textContent = "Configured";
+    $("#setup-fb-project").textContent = FIREBASE_CONFIG.projectId;
+  }
+  $("#setup-fb-doc").textContent = FIREBASE_COLLECTION + "/" + PROFILE_ID;
+  $("#setup-gh-repo").textContent = GH_OWNER + "/" + GH_REPO;
+
+  $("#cfg-gh-pat").value = localStorage.getItem(LS_GH_PAT) || "";
+
+  const cached = localStorage.getItem(LS_DATA);
+  $("#setup-cache-size").textContent = cached ? (Math.round(cached.length / 1024) + " KB") : "empty";
+  $("#setup-cache-time").textContent = state && state.lastSyncIso
+    ? new Date(state.lastSyncIso).toLocaleString()
+    : "—";
+}
+
+// Tabs
+function bindTabs() {
+  $$("nav.tabs button").forEach(b => {
+    b.addEventListener("click", () => {
+      switchTab(b.dataset.tab);
+    });
+  });
+  $$("#setup-banner a[data-tab]").forEach(a => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      switchTab(a.dataset.tab);
+    });
+  });
+}
+function switchTab(tab) {
+  $$("nav.tabs button").forEach(b => {
+    b.classList.toggle("active", b.dataset.tab === tab);
+  });
+  $$(".page").forEach(p => {
+    p.classList.toggle("active", p.id === "page-" + tab);
+  });
+}
+
+// Setup handlers
+function bindSetup() {
+  $("#btn-save-func").addEventListener("click", () => {
+    const pat = $("#cfg-gh-pat").value.trim();
+    localStorage.setItem(LS_GH_PAT, pat);
+    $("#func-status").textContent = pat ? "Saved." : "Cleared.";
+  });
+  $("#btn-test-sync").addEventListener("click", manualSync);
+  $("#btn-clear-cache").addEventListener("click", () => {
+    if (!confirm("Clear local cached data?")) {
+      return;
+    }
+    localStorage.removeItem(LS_DATA);
+    state = null;
+    renderAll();
+  });
+  $("#btn-sync").addEventListener("click", manualSync);
+}
+
+function renderAll() {
+  renderToday();
+  renderTrends();
+  renderActivities();
+  renderSetup();
+}
+
+function init() {
+  bindTabs();
+  bindSetup();
+  renderAll();
+
+  if (isConfigPlaceholder(FIREBASE_CONFIG)) {
+    setSyncDot("off");
+    setSyncStatus("Sync: not configured");
+    showSetupBanner(true);
+    return;
+  }
+  showSetupBanner(false);
+  startFirebase();
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+</body>
+</html>

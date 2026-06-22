@@ -1,0 +1,24 @@
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.python_packages/
+api/.python_packages/
+api/local.settings.json
+api/__azurite_db_*
+
+.azure/*.env
+.azure/*/
+!.azure/deployment-plan.md
+
+# Firebase Admin SDK service-account JSON — never commit
+*serviceAccount*.json
+*service-account*.json
+firebase-adminsdk*.json
+garmin-*firebase*.json

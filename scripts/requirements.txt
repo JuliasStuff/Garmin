@@ -1,0 +1,2 @@
+firebase-admin>=6.5.0
+garminconnect>=0.2.20
