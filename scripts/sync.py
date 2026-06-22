@@ -15,7 +15,7 @@ Optional overrides:
     GARMIN_PROFILE_ID               default "default"
     GARMIN_HISTORY_DAYS             default 30
     GARMIN_ACTIVITY_LIMIT           default 20
-    GARMIN_STEP_GOAL                default 10000
+    GARMIN_STEP_GOAL                default 7000
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ FIREBASE_COLLECTION = os.getenv("FIREBASE_COLLECTION", "garminTrackers")
 PROFILE_ID = os.getenv("GARMIN_PROFILE_ID", "default")
 HISTORY_DAYS = int(os.getenv("GARMIN_HISTORY_DAYS", "30"))
 ACTIVITY_LIMIT = int(os.getenv("GARMIN_ACTIVITY_LIMIT", "20"))
-STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "10000"))
+STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "7000"))
 
 
 def _firestore() -> firestore.Client:
