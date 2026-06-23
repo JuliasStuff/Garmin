@@ -122,18 +122,34 @@ def _collect_today(client: Garmin) -> dict[str, Any]:
 
 
 def _collect_sleep(client: Garmin) -> dict[str, Any]:
-    sleep_date = (date.today() - timedelta(days=1)).isoformat()
-    sleep = client.get_sleep_data(sleep_date) or {}
-    dto = sleep.get("dailySleepDTO") or {}
-    score = (dto.get("sleepScores") or {}).get("overall", {}).get("value")
+    # Garmin keys each sleep period to its wake date (the night that ENDED
+    # on that calendar day). Querying with today's date returns "last night".
+    # Try today first; if Garmin hasn't uploaded yet (can happen when the
+    # workflow runs in early-UTC hours, before the user's wake-up), fall
+    # back to yesterday so we still return *something* rather than empty.
+    for candidate in (date.today(), date.today() - timedelta(days=1)):
+        d_str = candidate.isoformat()
+        sleep = client.get_sleep_data(d_str) or {}
+        dto = sleep.get("dailySleepDTO") or {}
+        if dto.get("sleepTimeSeconds"):
+            score = (dto.get("sleepScores") or {}).get("overall", {}).get("value")
+            return {
+                "date": d_str,
+                "totalMin": _to_min(dto.get("sleepTimeSeconds")),
+                "deepMin": _to_min(dto.get("deepSleepSeconds")),
+                "lightMin": _to_min(dto.get("lightSleepSeconds")),
+                "remMin": _to_min(dto.get("remSleepSeconds")),
+                "awakeMin": _to_min(dto.get("awakeSleepSeconds")),
+                "score": score,
+            }
     return {
-        "date": sleep_date,
-        "totalMin": _to_min(dto.get("sleepTimeSeconds")),
-        "deepMin": _to_min(dto.get("deepSleepSeconds")),
-        "lightMin": _to_min(dto.get("lightSleepSeconds")),
-        "remMin": _to_min(dto.get("remSleepSeconds")),
-        "awakeMin": _to_min(dto.get("awakeSleepSeconds")),
-        "score": score,
+        "date": date.today().isoformat(),
+        "totalMin": None,
+        "deepMin": None,
+        "lightMin": None,
+        "remMin": None,
+        "awakeMin": None,
+        "score": None,
     }
 
 
