@@ -2,9 +2,23 @@ name: Garmin sync
 
 on:
   schedule:
-    # Hourly at minute 0 (UTC). Cron is best-effort on GitHub-hosted runners.
-    - cron: '0 * * * *'
-  workflow_dispatch: {}
+    # Every 15 minutes: live mode (today + sleep + intensity only).
+    # Cheap (~5 Garmin API calls per run); safe to hit frequently.
+    - cron: '*/15 * * * *'
+    # Once a day at 09:00 UTC (~02:00 Pacific): full mode, refreshes the
+    # 365-day history and recent activities. Slow (~90s); only worth running
+    # once per day because historical days don't change.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Sync mode (live = today only, full = include history + activities)'
+        required: false
+        default: 'live'
+        type: choice
+        options:
+          - live
+          - full
 
 permissions:
   contents: read
@@ -39,4 +53,7 @@ jobs:
           # local timezone, otherwise the UTC runner asks Garmin for
           # tomorrow's data every evening and gets nulls.
           GARMIN_TZ: America/Los_Angeles
+          # Pick the sync mode: dispatch input wins, otherwise the cron
+          # schedule decides (daily 09:00 UTC → full, all others → live).
+          SYNC_MODE: ${{ github.event.inputs.mode || (github.event.schedule == '0 9 * * *' && 'full') || 'live' }}
         run: python scripts/sync.py

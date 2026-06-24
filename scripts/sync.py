@@ -22,6 +22,14 @@ Optional overrides:
                                     timezone, otherwise the GitHub Actions
                                     UTC runner will ask Garmin for tomorrow's
                                     data once it's past local-evening.
+    SYNC_MODE                       "live" or "full" (default "full").
+                                    Live mode only fetches today + sleep +
+                                    intensity (cheap, ~5 API calls) and
+                                    leaves the cached history and activities
+                                    in Firestore untouched. Full mode adds
+                                    the 365-day history and recent
+                                    activities backfill (~750 API calls).
+                                    The CLI flag --mode=<live|full> overrides.
 """
 from __future__ import annotations
 
@@ -317,38 +325,77 @@ def _strip_none(d: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in d.items() if v is not None}
 
 
-def run_sync() -> dict[str, Any]:
+def run_sync(mode: str = "full") -> dict[str, Any]:
+    """Run a sync.
+
+    mode="live" → only today/sleep/intensity (cheap, ~10s, safe to run
+        every 15 min). History and activities are left as-is in Firestore.
+    mode="full" → everything, including the 365-day history backfill and
+        the recent activities list. Slow (~90s); run once a day.
+    """
+    if mode not in ("live", "full"):
+        raise ValueError(f"Unknown sync mode: {mode!r}")
+
     client = _login_garmin()
     today = _collect_today(client)
     sleep = _collect_sleep(client)
-    payload = {
+
+    payload: dict[str, Any] = {
         "profile": _profile(client),
         # Strip Nones from today/sleep so an empty Garmin response doesn't
         # overwrite previously-good values via the merge write below.
         "today": _strip_none(today),
         "sleep": _strip_none(sleep),
         "intensity": _collect_intensity(client, INTENSITY_DAYS, INTENSITY_GOAL),
-        "history": _collect_history(client, HISTORY_DAYS),
-        "activities": _collect_activities(client, ACTIVITY_LIMIT),
         "lastSyncIso": datetime.now(timezone.utc).isoformat(),
+        "lastSyncMode": mode,
         "syncSourceClientId": "github-actions",
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }
+
+    history_count = None
+    activities_count = None
+    if mode == "full":
+        history = _collect_history(client, HISTORY_DAYS)
+        activities = _collect_activities(client, ACTIVITY_LIMIT)
+        payload["history"] = history
+        payload["activities"] = activities
+        payload["lastFullSyncIso"] = payload["lastSyncIso"]
+        history_count = len(history)
+        activities_count = len(activities)
+
     db = _firestore()
     db.collection(FIREBASE_COLLECTION).document(PROFILE_ID).set(payload, merge=True)
     return {
+        "mode": mode,
         "syncedAt": payload["lastSyncIso"],
         "todayDate": today.get("date"),
         "todayStale": today.get("staleData", False),
-        "activitiesCount": len(payload["activities"]),
-        "historyCount": len(payload["history"]),
+        "activitiesCount": activities_count,
+        "historyCount": history_count,
     }
 
 
+def _resolve_mode() -> str:
+    # CLI flag wins; otherwise SYNC_MODE env; otherwise default to "full".
+    for arg in sys.argv[1:]:
+        if arg.startswith("--mode="):
+            return arg.split("=", 1)[1].strip().lower()
+        if arg == "--mode":
+            idx = sys.argv.index(arg)
+            if idx + 1 < len(sys.argv):
+                return sys.argv[idx + 1].strip().lower()
+    env_mode = os.getenv("SYNC_MODE", "").strip().lower()
+    if env_mode:
+        return env_mode
+    return "full"
+
+
 if __name__ == "__main__":
+    selected_mode = _resolve_mode()
     try:
-        summary = run_sync()
+        summary = run_sync(selected_mode)
     except Exception:
-        logger.exception("Garmin sync failed")
+        logger.exception("Garmin sync failed (mode=%s)", selected_mode)
         sys.exit(1)
     logger.info("Garmin sync OK: %s", summary)
