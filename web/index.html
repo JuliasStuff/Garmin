@@ -1696,6 +1696,53 @@ function switchTab(tab) {
   });
 }
 
+// Swipe left/right to switch between Today, Trends, Activities.
+// Setup is intentionally NOT in the rotation — it's reached via the
+// footer button. Edit-mode (drag-to-reorder) suppresses swipes so
+// Sortable.js keeps full control.
+const SWIPE_TAB_ORDER = ["today", "trends", "activities"];
+const SWIPE_MIN_DX = 60;            // px of horizontal travel required
+const SWIPE_MAX_VERT_RATIO = 0.5;   // |dy| < dx * 0.5 → unambiguously horizontal
+
+function bindSwipeNav() {
+  let start = null;
+
+  document.addEventListener("touchstart", (e) => {
+    if (document.body.classList.contains("editing")) { start = null; return; }
+    if (e.touches.length !== 1) { start = null; return; }
+    const t = e.touches[0];
+    // Don't start a swipe gesture from inside the tab bar, the trend range
+    // selector, or any button/input/anchor — those need their own taps.
+    if (e.target.closest && e.target.closest("nav.tabs, .range-selector, button, a, input, textarea, select")) {
+      start = null;
+      return;
+    }
+    start = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+
+  document.addEventListener("touchend", (e) => {
+    if (!start) return;
+    const s = start;
+    start = null;
+    const t = e.changedTouches && e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    if (Math.abs(dx) < SWIPE_MIN_DX) return;
+    if (Math.abs(dy) > Math.abs(dx) * SWIPE_MAX_VERT_RATIO) return;
+
+    const activeBtn = $("nav.tabs button.active");
+    const currentTab = activeBtn ? activeBtn.dataset.tab : "today";
+    const idx = SWIPE_TAB_ORDER.indexOf(currentTab);
+    if (idx < 0) return; // on the setup tab — leave it alone
+    const nextIdx = dx < 0 ? idx + 1 : idx - 1;
+    if (nextIdx < 0 || nextIdx >= SWIPE_TAB_ORDER.length) return;
+    switchTab(SWIPE_TAB_ORDER[nextIdx]);
+  }, { passive: true });
+
+  document.addEventListener("touchcancel", () => { start = null; }, { passive: true });
+}
+
 function bindTrendRange() {
   const buttons = $$("#trend-range button");
   buttons.forEach(b => {
@@ -1826,6 +1873,7 @@ function init() {
   bindTabs();
   bindTrendRange();
   bindSetup();
+  bindSwipeNav();
   renderAll();
   applyAllOrders();
 
