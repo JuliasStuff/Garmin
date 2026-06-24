@@ -103,7 +103,7 @@ def _collect_today(client: Garmin) -> dict[str, Any]:
     stats = client.get_stats(today_str) or {}
     hr = client.get_heart_rates(today_str) or {}
     current_hr, current_hr_at = _current_hr(hr)
-    return {
+    payload: dict[str, Any] = {
         "date": today_str,
         "steps": stats.get("totalSteps"),
         "stepGoal": stats.get("dailyStepGoal"),
@@ -119,6 +119,25 @@ def _collect_today(client: Garmin) -> dict[str, Any]:
         "stress": stats.get("averageStressLevel"),
         "floors": stats.get("floorsAscended"),
     }
+    # "Has the watch uploaded anything for today?" — if all the core
+    # live metrics are None, Garmin Connect hasn't received fresh data,
+    # usually because the watch hasn't been near the phone with BLE on.
+    has_data = any(
+        payload.get(k) is not None
+        for k in ("steps", "totalCalories", "currentHR", "restingHR",
+                  "minHR", "maxHR")
+    )
+    if has_data:
+        payload["dataAsOfDate"] = today_str
+        payload["staleData"] = False
+    else:
+        payload["staleData"] = True
+        logger.warning(
+            "Garmin returned no today data for %s — watch likely hasn't "
+            "synced to Garmin Connect yet. Preserving prior values.",
+            today_str,
+        )
+    return payload
 
 
 def _collect_sleep(client: Garmin) -> dict[str, Any]:
@@ -259,12 +278,26 @@ def _profile(client: Garmin) -> dict[str, Any]:
     }
 
 
+def _strip_none(d: dict[str, Any]) -> dict[str, Any]:
+    """Drop keys whose value is None.
+
+    Firestore's set(merge=True) writes nulls for None values, which would
+    wipe out previously-good fields. Stripping Nones lets prior values
+    survive when Garmin returns an empty snapshot (watch not synced).
+    """
+    return {k: v for k, v in d.items() if v is not None}
+
+
 def run_sync() -> dict[str, Any]:
     client = _login_garmin()
+    today = _collect_today(client)
+    sleep = _collect_sleep(client)
     payload = {
         "profile": _profile(client),
-        "today": _collect_today(client),
-        "sleep": _collect_sleep(client),
+        # Strip Nones from today/sleep so an empty Garmin response doesn't
+        # overwrite previously-good values via the merge write below.
+        "today": _strip_none(today),
+        "sleep": _strip_none(sleep),
         "intensity": _collect_intensity(client, INTENSITY_DAYS, INTENSITY_GOAL),
         "history": _collect_history(client, HISTORY_DAYS),
         "activities": _collect_activities(client, ACTIVITY_LIMIT),
@@ -276,7 +309,8 @@ def run_sync() -> dict[str, Any]:
     db.collection(FIREBASE_COLLECTION).document(PROFILE_ID).set(payload, merge=True)
     return {
         "syncedAt": payload["lastSyncIso"],
-        "todayDate": payload["today"].get("date"),
+        "todayDate": today.get("date"),
+        "todayStale": today.get("staleData", False),
         "activitiesCount": len(payload["activities"]),
         "historyCount": len(payload["history"]),
     }

@@ -133,6 +133,16 @@ button.btn.small  { padding:6px 10px; font-size:12px; }
   background:rgba(0,0,0,.06); padding:1px 5px; border-radius:4px;
 }
 
+.stale-notice {
+  background:#fff4dc; border:1px solid #f0d08a; color:#7a5b1e;
+  border-radius:8px; padding:8px 12px; font-size:12px;
+  line-height:1.4; margin-bottom:12px;
+  display:flex; gap:8px; align-items:flex-start;
+}
+.stale-notice[hidden] { display:none; }
+.stale-notice strong { color:#5a4012; font-weight:700; }
+.stale-notice .stale-ico { flex-shrink:0; }
+
 nav.tabs {
   display:flex; gap:6px;
   background:var(--panel); border:1px solid var(--line);
@@ -522,6 +532,7 @@ body.editing .card::before {
 
   <section id="page-today" class="page active">
     <div class="card" data-key="stats">
+      <div id="today-stale" class="stale-notice" hidden></div>
       <div class="stats-grid" id="stats-grid"></div>
     </div>
 
@@ -934,10 +945,45 @@ function activityIcon(type) {
   return "⏱️";
 }
 
+// Show a warning when the sync ran but Garmin Connect had no fresh data
+// for today (watch hasn't uploaded yet). The displayed metrics in that
+// case are preserved from the last good sync, NOT what's actually on
+// the watch right now — so the user should know.
+function renderTodayStaleNotice(today) {
+  const banner = $("#today-stale");
+  if (!banner) return;
+
+  const localToday = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+  const flaggedStale = today && today.staleData === true;
+  const asOf = today && (today.dataAsOfDate || today.date);
+  // Either the sync explicitly flagged it, OR the data is from an older calendar day.
+  const isStale = flaggedStale || (asOf && asOf !== localToday);
+
+  if (!isStale) {
+    banner.hidden = true;
+    banner.textContent = "";
+    return;
+  }
+
+  let asOfText = "an earlier sync";
+  if (asOf) {
+    const d = new Date(asOf + "T00:00:00");
+    asOfText = d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  }
+  banner.hidden = false;
+  banner.innerHTML =
+    '<span class="stale-ico">⚠️</span>' +
+    '<span><strong>Watch hasn\u2019t uploaded today\u2019s data yet.</strong> ' +
+    'Showing the most recent values from ' + asOfText + '. ' +
+    'Open the Garmin Connect app on your phone (with the watch nearby) to force an upload, ' +
+    'then hit Sync.</span>';
+}
+
 // Render: Today
 function renderToday() {
   const today = (state && state.today) || {};
 
+  renderTodayStaleNotice(today);
   const goal = (state && state.profile && state.profile.goalSteps) || DEFAULT_STEP_GOAL;
   const steps = today.steps;
   const stepPct = steps ? Math.min(100, Math.round((steps / goal) * 100)) : 0;
