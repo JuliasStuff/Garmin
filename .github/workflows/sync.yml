@@ -2,12 +2,11 @@ name: Garmin sync
 
 on:
   schedule:
-    # Every 15 minutes: live mode (today + sleep + intensity only).
-    # Cheap (~5 Garmin API calls per run); safe to hit frequently.
-    - cron: '*/15 * * * *'
     # Once a day at 09:00 UTC (~02:00 Pacific): full mode, refreshes the
-    # 365-day history and recent activities. Slow (~90s); only worth running
-    # once per day because historical days don't change.
+    # 365-day history and recent activities. This is the ONLY scheduled
+    # sync. Live syncs are driven by the PWA itself: it dispatches a
+    # workflow_dispatch on open and again every 60s while the app is open.
+    # When the app is closed, nothing runs in the background.
     - cron: '0 9 * * *'
   workflow_dispatch:
     inputs:

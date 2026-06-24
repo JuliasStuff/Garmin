@@ -840,27 +840,53 @@ function formatUpdated(ts) {
   return d.toLocaleString();
 }
 
-// Manual sync (POST → GitHub Actions workflow_dispatch, then wait for
-// Firestore updatedAt to advance so the button reflects real completion).
-async function manualSync() {
+// Sync orchestration.
+//
+// Two callers:
+//   • The Sync button (manualSync) — verbose, updates the button text and
+//     the Setup tab status, alerts on missing PAT.
+//   • The auto-sync loop (autoSync) — silent, runs every 60s while the
+//     page is visible. Quietly bails if no PAT.
+//
+// Both go through triggerSync(), which dispatches the workflow and then
+// waits for Firestore.updatedAt to advance past the captured baseline.
+// _syncInFlight prevents overlapping dispatches.
+let _syncInFlight = false;
+
+async function triggerSync({ silent }) {
   const pat = localStorage.getItem(LS_GH_PAT);
+  if (!pat) {
+    if (!silent) {
+      alert("Set the GitHub PAT in the Setup tab first.");
+    }
+    return { ok: false, reason: "no-pat" };
+  }
+  if (_syncInFlight) {
+    return { ok: false, reason: "in-flight" };
+  }
+  _syncInFlight = true;
+
   const btn = $("#btn-sync");
   const status = $("#func-status");
-  if (!pat) {
-    alert("Set the GitHub PAT in the Setup tab first.");
-    return;
-  }
-  // Capture the document's current updatedAt as a baseline. Anything newer
-  // than this (delivered via Firestore onSnapshot) means our dispatched
-  // workflow has finished and written fresh data.
   const baseline = _updatedAtMs(state);
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Dispatching…";
+
+  if (!silent) {
+    if (btn) { btn.disabled = true; btn.textContent = "Dispatching…"; }
+    if (status) status.textContent = "Dispatching GitHub Actions workflow…";
   }
-  if (status) {
-    status.textContent = "Dispatching GitHub Actions workflow…";
-  }
+  // Always nudge the dot to show something is happening, even for silent runs.
+  setSyncDot("connecting");
+
+  let tickId = null;
+  const restoreButton = (text, holdMs) => {
+    if (silent || !btn) return;
+    btn.textContent = text;
+    setTimeout(() => {
+      btn.textContent = "🔄 Sync";
+      btn.disabled = false;
+    }, holdMs);
+  };
+
   try {
     const url = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/actions/workflows/${GH_WORKFLOW_FILE}/dispatches`;
     const res = await fetch(url, {
@@ -873,23 +899,23 @@ async function manualSync() {
       },
       // Live mode only: refresh today/sleep/intensity. Historical days
       // never change, so the 365-day backfill runs once a day on its own
-      // cron schedule (see sync.yml). Keeps the button fast.
+      // cron schedule (see sync.yml). Keeps every dispatch fast.
       body: JSON.stringify({ ref: GH_REF, inputs: { mode: "live" } })
     });
     if (!res.ok) {
       const body = await res.text();
       throw new Error("HTTP " + res.status + ": " + body.slice(0, 200));
     }
-    // Dispatched OK — now wait for the snapshot listener to see fresh data.
-    if (btn) btn.textContent = "Syncing…";
-    if (status) status.textContent = "Workflow dispatched. Waiting for fresh data…";
 
-    let elapsed = 0;
-    const tick = () => {
-      elapsed += 1;
-      if (btn) btn.textContent = "Syncing… " + elapsed + "s";
-    };
-    const tickId = setInterval(tick, 1000);
+    if (!silent) {
+      if (btn) btn.textContent = "Syncing…";
+      if (status) status.textContent = "Workflow dispatched. Waiting for fresh data…";
+      let elapsed = 0;
+      tickId = setInterval(() => {
+        elapsed += 1;
+        if (btn) btn.textContent = "Syncing… " + elapsed + "s";
+      }, 1000);
+    }
 
     const TIMEOUT_MS = 180000; // 3 minutes
     await new Promise((resolve, reject) => {
@@ -900,45 +926,71 @@ async function manualSync() {
           reject(new Error("timeout"));
         }
       }, TIMEOUT_MS);
-    }).then(() => {
-      clearInterval(tickId);
-      if (btn) {
-        btn.textContent = "Synced ✓";
-        setTimeout(() => {
-          btn.textContent = "🔄 Sync";
-          btn.disabled = false;
-        }, 2000);
-      }
-      if (status) status.textContent = "Sync complete.";
-    }, (err) => {
-      clearInterval(tickId);
-      if (btn) {
-        btn.textContent = err.message === "timeout" ? "Timed out" : "Failed";
-        setTimeout(() => {
-          btn.textContent = "🔄 Sync";
-          btn.disabled = false;
-        }, 2500);
-      }
-      if (status) {
-        status.textContent = err.message === "timeout"
-          ? "No update received within 3 min. The workflow may still be running — check Actions tab."
-          : "Failed: " + err.message;
-      }
     });
+
+    if (tickId) clearInterval(tickId);
+    if (!silent && status) status.textContent = "Sync complete.";
+    restoreButton("Synced ✓", 2000);
+    return { ok: true };
   } catch (e) {
-    console.error(e);
-    if (status) {
-      status.textContent = "Failed: " + e.message;
+    if (tickId) clearInterval(tickId);
+    const timedOut = e && e.message === "timeout";
+    if (silent) {
+      console.warn("Auto-sync failed:", e);
+      setSyncDot("error");
+    } else {
+      console.error(e);
+      if (status) {
+        status.textContent = timedOut
+          ? "No update received within 3 min. The workflow may still be running — check Actions tab."
+          : "Failed: " + e.message;
+      }
+      restoreButton(timedOut ? "Timed out" : "Failed", 2500);
     }
-    if (btn) {
-      btn.textContent = "Failed";
-      setTimeout(() => {
-        btn.textContent = "🔄 Sync";
-        btn.disabled = false;
-      }, 2500);
-    }
+    return { ok: false, reason: timedOut ? "timeout" : "error", error: e };
+  } finally {
+    _syncInFlight = false;
   }
 }
+
+// Public entry points
+function manualSync() {
+  return triggerSync({ silent: false });
+}
+function autoSync() {
+  return triggerSync({ silent: true });
+}
+
+// Auto-sync loop: fire on app open and every 60s while the page is visible.
+// Pauses immediately when the tab/PWA goes to the background so we don't
+// burn GitHub Actions runs (and Garmin API calls) on data nobody's looking at.
+const AUTO_SYNC_INTERVAL_MS = 60000;
+let _autoSyncTimer = null;
+
+function startAutoSync() {
+  if (_autoSyncTimer) return;
+  // Fire once immediately so opening the app refreshes data right away.
+  autoSync();
+  _autoSyncTimer = setInterval(() => {
+    if (document.hidden) return;
+    autoSync();
+  }, AUTO_SYNC_INTERVAL_MS);
+}
+
+function stopAutoSync() {
+  if (_autoSyncTimer) {
+    clearInterval(_autoSyncTimer);
+    _autoSyncTimer = null;
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopAutoSync();
+  } else {
+    startAutoSync();
+  }
+});
 
 // Formatting
 function fmtNum(n) {
@@ -1785,6 +1837,10 @@ function init() {
   }
   showSetupBanner(false);
   startFirebase();
+  // Trigger a sync on open and keep the data fresh every 60s while the
+  // tab/PWA is visible. There are NO background syncs when the app is
+  // closed — the only scheduled run is the once-daily full backfill.
+  startAutoSync();
 }
 
 document.addEventListener("DOMContentLoaded", init);
