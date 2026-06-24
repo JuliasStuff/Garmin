@@ -35,4 +35,8 @@ jobs:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          # IANA timezone for determining "today". MUST match the user's
+          # local timezone, otherwise the UTC runner asks Garmin for
+          # tomorrow's data every evening and gets nulls.
+          GARMIN_TZ: America/Los_Angeles
         run: python scripts/sync.py

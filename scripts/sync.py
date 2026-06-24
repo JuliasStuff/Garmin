@@ -16,6 +16,12 @@ Optional overrides:
     GARMIN_HISTORY_DAYS             default 365
     GARMIN_ACTIVITY_LIMIT           default 20
     GARMIN_STEP_GOAL                default 7000
+    GARMIN_TZ                       IANA timezone for determining "today",
+                                    e.g. "America/Los_Angeles". Defaults to
+                                    "UTC". MUST be set to the user's local
+                                    timezone, otherwise the GitHub Actions
+                                    UTC runner will ask Garmin for tomorrow's
+                                    data once it's past local-evening.
 """
 from __future__ import annotations
 
@@ -25,6 +31,7 @@ import os
 import sys
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -52,6 +59,28 @@ STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "7000"))
 CALORIE_GOAL = int(os.getenv("GARMIN_CALORIE_GOAL", "2300"))
 INTENSITY_GOAL = int(os.getenv("GARMIN_INTENSITY_GOAL", "140"))
 INTENSITY_DAYS = 7
+
+
+def _user_tz() -> ZoneInfo:
+    name = os.getenv("GARMIN_TZ", "UTC").strip() or "UTC"
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        logger.warning("Invalid GARMIN_TZ=%r, falling back to UTC", name)
+        return ZoneInfo("UTC")
+
+
+USER_TZ = _user_tz()
+
+
+def _today() -> date:
+    """Return today's date in the user's local timezone.
+
+    GitHub Actions runners are on UTC, so once it's past local-evening,
+    `date.today()` would point to *tomorrow* and Garmin would return empty
+    stats. Always derive the calendar date from USER_TZ instead.
+    """
+    return datetime.now(USER_TZ).date()
 
 
 def _firestore() -> firestore.Client:
@@ -99,7 +128,7 @@ def _current_hr(hr_obj: dict[str, Any]) -> tuple[int | None, str | None]:
 
 
 def _collect_today(client: Garmin) -> dict[str, Any]:
-    today_str = date.today().isoformat()
+    today_str = _today().isoformat()
     stats = client.get_stats(today_str) or {}
     hr = client.get_heart_rates(today_str) or {}
     current_hr, current_hr_at = _current_hr(hr)
@@ -146,7 +175,7 @@ def _collect_sleep(client: Garmin) -> dict[str, Any]:
     # Try today first; if Garmin hasn't uploaded yet (can happen when the
     # workflow runs in early-UTC hours, before the user's wake-up), fall
     # back to yesterday so we still return *something* rather than empty.
-    for candidate in (date.today(), date.today() - timedelta(days=1)):
+    for candidate in (_today(), _today() - timedelta(days=1)):
         d_str = candidate.isoformat()
         sleep = client.get_sleep_data(d_str) or {}
         dto = sleep.get("dailySleepDTO") or {}
@@ -162,7 +191,7 @@ def _collect_sleep(client: Garmin) -> dict[str, Any]:
                 "score": score,
             }
     return {
-        "date": date.today().isoformat(),
+        "date": _today().isoformat(),
         "totalMin": None,
         "deepMin": None,
         "lightMin": None,
@@ -179,7 +208,7 @@ def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
     and each vigorous-intensity minute counts as 2.
     """
     out_days: list[dict[str, Any]] = []
-    today = date.today()
+    today = _today()
     for offset in range(days):
         d = today - timedelta(days=offset)
         d_str = d.isoformat()
@@ -214,7 +243,7 @@ def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
 
 def _collect_history(client: Garmin, days: int) -> list[dict[str, Any]]:
     history: list[dict[str, Any]] = []
-    today = date.today()
+    today = _today()
     for offset in range(days):
         d = today - timedelta(days=offset)
         d_str = d.isoformat()
