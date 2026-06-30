@@ -104,6 +104,44 @@ header.topbar .topbar-sync {
 }
 #sync-status { font-size:13px; color:var(--ink-soft); }
 
+#sync-progress {
+  background:var(--panel);
+  border-bottom:1px solid var(--line);
+  padding:8px 14px 10px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  font-size:12px;
+  color:var(--ink-soft);
+}
+#sync-progress[hidden] { display:none; }
+.sync-progress-text {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:8px;
+}
+#sync-progress-step {
+  font-weight:600;
+  color:var(--ink);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.sync-progress-count { font-variant-numeric:tabular-nums; }
+.sync-progress-bar {
+  height:4px;
+  background:var(--panel-2);
+  border-radius:2px;
+  overflow:hidden;
+}
+.sync-progress-fill {
+  height:100%;
+  width:0;
+  background:linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition:width .4s ease;
+}
+
 button.btn {
   border:0; border-radius:10px; padding:9px 14px;
   cursor:pointer; font-weight:600; font-size:14px;
@@ -574,6 +612,14 @@ body.editing .card::before {
     See the <a href="#" data-tab="setup">Setup tab</a> for details.
   </div>
 
+  <div id="sync-progress" hidden>
+    <div class="sync-progress-text">
+      <span id="sync-progress-step">Starting…</span>
+      <span id="sync-progress-count" class="sync-progress-count"></span>
+    </div>
+    <div class="sync-progress-bar"><div id="sync-progress-fill" class="sync-progress-fill"></div></div>
+  </div>
+
   <nav class="tabs" id="tabs">
     <button data-tab="today" class="active">📊 Today</button>
     <button data-tab="trends">📈 Trends</button>
@@ -961,6 +1007,7 @@ async function triggerSync({ silent }) {
     if (!silent) {
       if (btn) btn.textContent = "Syncing…";
       if (status) status.textContent = "Workflow dispatched. Waiting for fresh data…";
+      pollSyncProgress(pat, Date.now()).catch(() => {});
       let elapsed = 0;
       tickId = setInterval(() => {
         elapsed += 1;
@@ -981,6 +1028,7 @@ async function triggerSync({ silent }) {
 
     if (tickId) clearInterval(tickId);
     if (!silent && status) status.textContent = "Sync complete.";
+    if (!silent) finishSyncProgress(true);
     restoreButton("Synced ✓", 2000);
     return { ok: true };
   } catch (e) {
@@ -996,6 +1044,7 @@ async function triggerSync({ silent }) {
           ? "No update received within 3 min. The workflow may still be running — check Actions tab."
           : "Failed: " + e.message;
       }
+      finishSyncProgress(false);
       restoreButton(timedOut ? "Timed out" : "Failed", 2500);
     }
     return { ok: false, reason: timedOut ? "timeout" : "error", error: e };
@@ -1010,6 +1059,104 @@ function manualSync() {
 }
 function autoSync() {
   return triggerSync({ silent: true });
+}
+
+function _sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+// Poll GitHub Actions for the run we just dispatched, and stream the
+// current step name + progress to the on-screen progress bar.
+async function pollSyncProgress(pat, dispatchedAtMs) {
+  const box = $("#sync-progress");
+  const stepEl = $("#sync-progress-step");
+  const countEl = $("#sync-progress-count");
+  const fillEl = $("#sync-progress-fill");
+  if (!box) {
+    return;
+  }
+  box.hidden = false;
+  stepEl.textContent = "Locating workflow run…";
+  countEl.textContent = "";
+  fillEl.style.width = "0%";
+
+  const headers = {
+    "Accept": "application/vnd.github+json",
+    "Authorization": "Bearer " + pat,
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+  const repoBase = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}`;
+
+  let runId = null;
+  for (let i = 0; i < 12 && _syncInFlight; i++) {
+    try {
+      const res = await fetch(
+        `${repoBase}/actions/workflows/${GH_WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=5`,
+        { headers }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const found = (data.workflow_runs || []).find(r => {
+          const created = Date.parse(r.created_at);
+          return created >= dispatchedAtMs - 5000;
+        });
+        if (found) {
+          runId = found.id;
+          break;
+        }
+      }
+    } catch (e) {
+      // retry
+    }
+    await _sleep(2500);
+  }
+  if (!runId || !_syncInFlight) {
+    return;
+  }
+
+  while (_syncInFlight) {
+    try {
+      const res = await fetch(`${repoBase}/actions/runs/${runId}/jobs`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        const job = (data.jobs || [])[0];
+        if (job && job.steps && job.steps.length > 0) {
+          const steps = job.steps;
+          const done = steps.filter(s => s.status === "completed").length;
+          const total = steps.length;
+          const current = steps.find(s => s.status === "in_progress")
+                       || steps.find(s => s.status === "queued");
+          const name = current ? current.name
+                     : (job.status === "completed" ? "Complete" : "Finishing…");
+          stepEl.textContent = name;
+          countEl.textContent = done + " / " + total;
+          fillEl.style.width = Math.round((done / total) * 100) + "%";
+          if (job.status === "completed") {
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      // retry
+    }
+    await _sleep(3000);
+  }
+}
+
+function finishSyncProgress(ok) {
+  const box = $("#sync-progress");
+  const stepEl = $("#sync-progress-step");
+  const fillEl = $("#sync-progress-fill");
+  if (!box || box.hidden) {
+    return;
+  }
+  if (stepEl) {
+    stepEl.textContent = ok ? "Complete" : "Failed";
+  }
+  if (fillEl) {
+    fillEl.style.width = "100%";
+  }
+  setTimeout(() => { box.hidden = true; }, 1800);
 }
 
 // Auto-sync loop: fire on app open and every 60s while the page is visible.
