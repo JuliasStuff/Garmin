@@ -37,6 +37,7 @@ import json
 import logging
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -67,6 +68,10 @@ STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "7000"))
 CALORIE_GOAL = int(os.getenv("GARMIN_CALORIE_GOAL", "2300"))
 INTENSITY_GOAL = int(os.getenv("GARMIN_INTENSITY_GOAL", "140"))
 INTENSITY_DAYS = 7
+
+# Directory used by garth to persist OAuth tokens between runs. When the
+# GitHub Actions cache is warm this lets us skip the ~3-5s fresh login.
+TOKEN_STORE = os.path.expanduser("~/.garminconnect")
 
 
 def _user_tz() -> ZoneInfo:
@@ -103,12 +108,30 @@ def _login_garmin() -> Garmin:
     email = _required("GARMIN_EMAIL")
     password = _required("GARMIN_PASSWORD")
     client = Garmin(email=email, password=password)
+
+    # Try to resume from the cached token store first. On a cache hit this
+    # avoids the full OAuth handshake.
+    if os.path.isdir(TOKEN_STORE):
+        try:
+            client.login(TOKEN_STORE)
+            logger.info("Resumed Garmin session from %s", TOKEN_STORE)
+            return client
+        except Exception as e:
+            logger.info("Cached session invalid (%s); doing fresh login", e)
+
     result = client.login()
     if isinstance(result, tuple) and result and result[0] == "needs_mfa":
         raise RuntimeError(
             "Garmin account requires MFA, which non-interactive sync cannot satisfy. "
             "Disable MFA on the account used for sync, or pre-generate a Garth token."
         )
+
+    try:
+        os.makedirs(TOKEN_STORE, exist_ok=True)
+        client.garth.dump(TOKEN_STORE)
+        logger.info("Persisted Garmin session to %s", TOKEN_STORE)
+    except Exception as e:
+        logger.warning("Failed to persist Garmin tokens: %s", e)
     return client
 
 
@@ -215,11 +238,10 @@ def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
     Garmin's standard scoring: each moderate-intensity minute counts as 1
     and each vigorous-intensity minute counts as 2.
     """
-    out_days: list[dict[str, Any]] = []
     today = _today()
-    for offset in range(days):
-        d = today - timedelta(days=offset)
-        d_str = d.isoformat()
+    date_strs = [(today - timedelta(days=offset)).isoformat() for offset in range(days)]
+
+    def _fetch_day(d_str: str) -> dict[str, Any]:
         try:
             im = client.get_intensity_minutes_data(d_str) or {}
         except Exception as e:
@@ -233,12 +255,15 @@ def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
         vigorous = int(
             im.get("vigorousMinutes") or im.get("vigorousValue") or 0
         )
-        out_days.append({
+        return {
             "date": d_str,
             "moderate": moderate,
             "vigorous": vigorous,
             "minutes": moderate + 2 * vigorous,
-        })
+        }
+
+    with ThreadPoolExecutor(max_workers=min(days, 8)) as ex:
+        out_days = list(ex.map(_fetch_day, date_strs))
     out_days.sort(key=lambda x: x["date"])
     total = sum(d["minutes"] for d in out_days)
     return {
@@ -250,17 +275,16 @@ def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
 
 
 def _collect_history(client: Garmin, days: int) -> list[dict[str, Any]]:
-    history: list[dict[str, Any]] = []
     today = _today()
-    for offset in range(days):
-        d = today - timedelta(days=offset)
-        d_str = d.isoformat()
+    date_strs = [(today - timedelta(days=offset)).isoformat() for offset in range(days)]
+
+    def _fetch_day(d_str: str) -> dict[str, Any] | None:
         try:
             s = client.get_stats(d_str) or {}
             sl = client.get_sleep_data(d_str) or {}
             dto = sl.get("dailySleepDTO") or {}
             score = (dto.get("sleepScores") or {}).get("overall", {}).get("value")
-            history.append({
+            return {
                 "date": d_str,
                 "steps": s.get("totalSteps"),
                 "calories": s.get("totalKilocalories"),
@@ -270,9 +294,14 @@ def _collect_history(client: Garmin, days: int) -> list[dict[str, Any]]:
                 "minHR": s.get("minHeartRate"),
                 "sleepMin": _to_min(dto.get("sleepTimeSeconds")),
                 "sleepScore": score,
-            })
+            }
         except Exception as e:
             logger.warning("History fetch failed for %s: %s", d_str, e)
+            return None
+
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        results = list(ex.map(_fetch_day, date_strs))
+    history = [r for r in results if r is not None]
     history.sort(key=lambda x: x["date"])
     return history
 
@@ -337,16 +366,32 @@ def run_sync(mode: str = "full") -> dict[str, Any]:
         raise ValueError(f"Unknown sync mode: {mode!r}")
 
     client = _login_garmin()
-    today = _collect_today(client)
-    sleep = _collect_sleep(client)
+
+    # Fan out all collectors in parallel. The underlying requests.Session
+    # used by garth is thread-safe for concurrent GETs, and each top-level
+    # collector also parallelizes its own per-day fan-out.
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        f_today = ex.submit(_collect_today, client)
+        f_sleep = ex.submit(_collect_sleep, client)
+        f_intensity = ex.submit(_collect_intensity, client, INTENSITY_DAYS, INTENSITY_GOAL)
+        f_profile = ex.submit(_profile, client)
+        f_history = ex.submit(_collect_history, client, HISTORY_DAYS) if mode == "full" else None
+        f_activities = ex.submit(_collect_activities, client, ACTIVITY_LIMIT) if mode == "full" else None
+
+        today = f_today.result()
+        sleep = f_sleep.result()
+        intensity = f_intensity.result()
+        profile = f_profile.result()
+        history = f_history.result() if f_history else None
+        activities = f_activities.result() if f_activities else None
 
     payload: dict[str, Any] = {
-        "profile": _profile(client),
+        "profile": profile,
         # Strip Nones from today/sleep so an empty Garmin response doesn't
         # overwrite previously-good values via the merge write below.
         "today": _strip_none(today),
         "sleep": _strip_none(sleep),
-        "intensity": _collect_intensity(client, INTENSITY_DAYS, INTENSITY_GOAL),
+        "intensity": intensity,
         "lastSyncIso": datetime.now(timezone.utc).isoformat(),
         "lastSyncMode": mode,
         "syncSourceClientId": "github-actions",
@@ -356,13 +401,11 @@ def run_sync(mode: str = "full") -> dict[str, Any]:
     history_count = None
     activities_count = None
     if mode == "full":
-        history = _collect_history(client, HISTORY_DAYS)
-        activities = _collect_activities(client, ACTIVITY_LIMIT)
         payload["history"] = history
         payload["activities"] = activities
         payload["lastFullSyncIso"] = payload["lastSyncIso"]
-        history_count = len(history)
-        activities_count = len(activities)
+        history_count = len(history) if history else 0
+        activities_count = len(activities) if activities else 0
 
     db = _firestore()
     db.collection(FIREBASE_COLLECTION).document(PROFILE_ID).set(payload, merge=True)
