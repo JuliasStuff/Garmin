@@ -690,18 +690,6 @@ body.editing .card::before {
   </section>
 
   <section id="page-setup" class="page">
-    <div class="card" data-key="firebase">
-      <h3>☁️ Firebase</h3>
-      <div class="kv-row"><div class="k">Status</div><div class="v" id="setup-fb-status">…</div></div>
-      <div class="kv-row"><div class="k">Project ID</div><div class="v" id="setup-fb-project">—</div></div>
-      <div class="kv-row"><div class="k">Document</div><div class="v" id="setup-fb-doc">—</div></div>
-      <p class="muted" style="margin-top:10px;">
-        To configure: edit <code>web/index.html</code> and paste the
-        <code>firebaseConfig</code> object from your Firebase console
-        (Project settings → Your apps → Web SDK setup → Config), then redeploy.
-      </p>
-    </div>
-
     <div class="card" data-key="manual-sync">
       <h3>🔄 Manual sync (GitHub Actions)</h3>
       <p class="muted">
@@ -1906,14 +1894,6 @@ function renderLineChart(container, points, options) {
 
 // Render: Setup
 function renderSetup() {
-  if (isConfigPlaceholder(FIREBASE_CONFIG)) {
-    $("#setup-fb-status").textContent = "Not configured (placeholder values)";
-    $("#setup-fb-project").textContent = "—";
-  } else {
-    $("#setup-fb-status").textContent = "Configured";
-    $("#setup-fb-project").textContent = FIREBASE_CONFIG.projectId;
-  }
-  $("#setup-fb-doc").textContent = FIREBASE_COLLECTION + "/" + PROFILE_ID;
   $("#setup-gh-repo").textContent = GH_OWNER + "/" + GH_REPO;
   $("#setup-app-version").textContent = APP_VERSION;
 
