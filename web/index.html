@@ -1302,7 +1302,7 @@ function renderIntensity() {
 
   const days = Array.isArray(im.days) ? im.days : [];
   const maxDay = Math.max(1, ...days.map(d => d.minutes || 0));
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local timezone
   daysEl.innerHTML = "";
   for (const d of days) {
     const mins = d.minutes || 0;
