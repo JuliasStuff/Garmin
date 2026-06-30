@@ -385,6 +385,56 @@ body.editing .card::before {
   .sleep-tile .st-val { font-size:20px; }
 }
 
+.sleep-notes {
+  grid-column:1 / -1;
+  margin-top:12px;
+  padding-top:12px;
+  border-top:1px solid var(--line);
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.sleep-notes-hd {
+  font-size:11px;
+  font-weight:700;
+  color:var(--ink-soft);
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+}
+.sleep-note-row {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.sleep-note-label {
+  flex:1;
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:14px;
+  color:var(--ink);
+  cursor:pointer;
+}
+.sleep-note-label input[type="checkbox"] {
+  width:18px;
+  height:18px;
+  accent-color:var(--accent);
+  cursor:pointer;
+}
+.sleep-note-row input[type="time"] {
+  padding:6px 8px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  font-family:inherit;
+  font-size:14px;
+  color:var(--ink);
+  background:var(--panel);
+}
+.sleep-note-row input[type="time"]:disabled {
+  opacity:0.45;
+  cursor:not-allowed;
+}
+
 .act-list { display:flex; flex-direction:column; gap:8px; }
 .act-row {
   display:flex; align-items:center; gap:12px;
@@ -673,6 +723,7 @@ const LS_FUNC_URL = "garminTracker.v1.funcUrl"; // legacy, no longer used
 const LS_FUNC_KEY = "garminTracker.v1.funcKey"; // legacy, no longer used
 const LS_GH_PAT = "garminTracker.v1.ghPat";
 const LS_TREND_RANGE = "garminTracker.v1.trendRange";
+const LS_SLEEP_NOTES = "garminTracker.v1.sleepNotes";
 
 // GitHub Actions sync configuration (hard-coded — the workflow lives in this repo)
 const GH_OWNER = "JuliasStuff";
@@ -1360,6 +1411,57 @@ function renderSleep() {
   if (s.score) {
     c.appendChild(el("div", { class: "muted sleep-score" }, "Sleep score " + s.score));
   }
+
+  if (s.date) {
+    c.appendChild(renderSleepNotes(s.date));
+  }
+}
+
+function loadAllSleepNotes() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_SLEEP_NOTES) || "{}");
+  } catch (e) {
+    return {};
+  }
+}
+
+function renderSleepNotes(sleepDate) {
+  const all = loadAllSleepNotes();
+  const notes = all[sleepDate] || {};
+
+  const block = el("div", { class: "sleep-notes" });
+  block.appendChild(el("div", { class: "sleep-notes-hd" }, "Notes for " + fmtDate(sleepDate)));
+
+  const makeRow = (key, label, defaultTime) => {
+    const cur = notes[key] || {};
+    const cb = el("input", { type: "checkbox" });
+    cb.checked = !!cur.had;
+    const time = el("input", { type: "time" });
+    time.value = cur.time || "";
+    time.disabled = !cb.checked;
+    const lbl = el("label", { class: "sleep-note-label" }, cb, " " + label);
+    const row = el("div", { class: "sleep-note-row" }, lbl, time);
+    const persist = () => {
+      const store = loadAllSleepNotes();
+      const entry = store[sleepDate] || {};
+      entry[key] = { had: cb.checked, time: cb.checked ? time.value : "" };
+      store[sleepDate] = entry;
+      localStorage.setItem(LS_SLEEP_NOTES, JSON.stringify(store));
+    };
+    cb.addEventListener("change", () => {
+      time.disabled = !cb.checked;
+      if (cb.checked && !time.value) {
+        time.value = defaultTime;
+      }
+      persist();
+    });
+    time.addEventListener("change", persist);
+    return row;
+  };
+
+  block.appendChild(makeRow("alcohol",   "\ud83c\udf77 Alcohol",  "20:00"));
+  block.appendChild(makeRow("melatonin", "\ud83d\udc8a Melatonin", "21:30"));
+  return block;
 }
 
 function activityRow(a) {
