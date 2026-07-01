@@ -49,7 +49,7 @@ jobs:
           cache-dependency-glob: scripts/requirements.txt
 
       - name: Install dependencies
-        run: uv pip install --system -r scripts/requirements.txt
+        run: uv pip install -r scripts/requirements.txt
 
       - name: Run Garmin sync
         env:
@@ -63,7 +63,7 @@ jobs:
           # Pick the sync mode: dispatch input wins, otherwise the cron
           # schedule decides (daily 09:00 UTC → full, all others → live).
           SYNC_MODE: ${{ github.event.inputs.mode || (github.event.schedule == '0 9 * * *' && 'full') || 'live' }}
-        run: python scripts/sync.py
+        run: uv run python scripts/sync.py
 
       - name: Save Garmin session
         if: always()
