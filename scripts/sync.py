@@ -308,6 +308,7 @@ def _collect_history(client: Garmin, days: int) -> list[dict[str, Any]]:
                 "maxHR": s.get("maxHeartRate"),
                 "minHR": s.get("minHeartRate"),
                 "sleepMin": _to_min(dto.get("sleepTimeSeconds")),
+                "deepMin": _to_min(dto.get("deepSleepSeconds")),
                 "sleepScore": score,
             }
         except Exception as e:

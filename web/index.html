@@ -537,6 +537,7 @@ body.editing .card::before {
 .chart-wrap svg { display:block; width:100%; height:auto; }
 .chart-axis-label { font-size:11px; fill:var(--ink-soft); }
 .chart-bar { fill:var(--accent); }
+.chart-bar.chart-bar-deep { fill:var(--accent-2); }
 .chart-bar.hit-goal { fill:var(--good); }
 .chart-bar.clickable { cursor:pointer; }
 .chart-bar.clickable:hover { opacity:0.82; }
@@ -548,6 +549,9 @@ body.editing .card::before {
 .chart-dot { fill:var(--accent-2); }
 .chart-goal-line {
   stroke:var(--bad); stroke-width:1; stroke-dasharray:4 3;
+}
+.chart-goal-line.secondary {
+  stroke:var(--accent-2);
 }
 .chart-legend {
   display:flex; flex-wrap:wrap; gap:10px 14px;
@@ -708,7 +712,7 @@ body.editing .card::before {
       <div class="chart-wrap" id="chart-calories"></div>
     </div>
     <div class="card" data-key="trend-resting">
-      <h3 id="trend-resting-title">❤️ Resting heart rate</h3>
+      <h3 id="trend-resting-title">❤️ Heart Rate</h3>
       <div class="chart-wrap" id="chart-resting"></div>
     </div>
     <div class="card" data-key="trend-sleep">
@@ -791,7 +795,7 @@ const FIREBASE_CONFIG = {
 const FIREBASE_COLLECTION = "garminTrackers";
 const PROFILE_ID = "default";
 
-const APP_VERSION = "v2026.07.02-1";
+const APP_VERSION = "v2026.07.02-2";
 
 const LS_DATA = "garminTracker.v1.data";
 const LS_FUNC_URL = "garminTracker.v1.funcUrl"; // legacy, no longer used
@@ -1718,9 +1722,25 @@ function renderTrends() {
                       { name: "Max", color: "#d94a4a",
                         points: windowed.map(d => ({ date: d.date, value: d.maxHR })) }
                     ] });
-  renderBarChart($("#chart-sleep"), windowed.map(d => ({ date: d.date, value: d.sleepMin || 0 })),
-                 { goal: 7 * 60, yFmt: v => fmtDurationMin(v),
-                   onBarClick: openSleepNotesModal });
+  renderBarChart(
+    $("#chart-sleep"),
+    windowed.map(d => ({
+      date: d.date,
+      value: d.sleepMin || 0,
+      deepValue: d.deepMin || 0
+    })),
+    {
+      goal: 7 * 60,
+      secondaryGoal: 90,
+      yFmt: v => fmtDurationMin(v),
+      onBarClick: openSleepNotesModal,
+      titleFmt: p => {
+        const total = p.value || 0;
+        const deep = p.deepValue || 0;
+        return fmtDate(p.date) + ": " + fmtDurationMin(total) + " total, " + fmtDurationMin(deep) + " deep";
+      }
+    }
+  );
 }
 
 function openSleepNotesModal(sleepDate) {
@@ -1794,14 +1814,25 @@ function renderBarChart(container, points, options) {
       x1: padL, x2: W - padR, y1: y, y2: y, class: "chart-goal-line"
     }));
   }
+  if (options.secondaryGoal) {
+    const y = padT + innerH - (options.secondaryGoal / maxV) * innerH;
+    svg.appendChild(svgEl("line", {
+      x1: padL, x2: W - padR, y1: y, y2: y, class: "chart-goal-line secondary"
+    }));
+  }
 
   for (let i = 0; i < points.length; i++) {
     const p = points[i];
     const v = p.value || 0;
+    const deepValue = Math.min(v, Math.max(0, p.deepValue || 0));
     const h = (v / maxV) * innerH;
+    const deepH = (deepValue / maxV) * innerH;
     const x = padL + i * barW + 1;
     const y = padT + innerH - h;
     const clickable = typeof options.onBarClick === "function" && p.date;
+    const titleText = options.titleFmt
+      ? options.titleFmt(p)
+      : fmtDate(p.date) + ": " + (options.yFmt ? options.yFmt(v) : v);
     const rect = svgEl("rect", {
       x, y,
       width: Math.max(1, barW - 2),
@@ -1812,12 +1843,31 @@ function renderBarChart(container, points, options) {
       rx: 1
     });
     const title = svgEl("title");
-    title.textContent = fmtDate(p.date) + ": " + (options.yFmt ? options.yFmt(v) : v);
+    title.textContent = titleText;
     rect.appendChild(title);
     if (clickable) {
       rect.addEventListener("click", () => options.onBarClick(p.date));
     }
     svg.appendChild(rect);
+
+    if (deepH > 0) {
+      const deepRect = svgEl("rect", {
+        x,
+        y: padT + innerH - deepH,
+        width: Math.max(1, barW - 2),
+        height: deepH,
+        class: "chart-bar chart-bar-deep"
+          + (clickable ? " clickable" : ""),
+        rx: 1
+      });
+      const deepTitle = svgEl("title");
+      deepTitle.textContent = titleText;
+      deepRect.appendChild(deepTitle);
+      if (clickable) {
+        deepRect.addEventListener("click", () => options.onBarClick(p.date));
+      }
+      svg.appendChild(deepRect);
+    }
   }
 
   if (points.length >= 2) {
