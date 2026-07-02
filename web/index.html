@@ -795,7 +795,7 @@ const FIREBASE_CONFIG = {
 const FIREBASE_COLLECTION = "garminTrackers";
 const PROFILE_ID = "default";
 
-const APP_VERSION = "v2026.07.02-2";
+const APP_VERSION = "v2026.07.02-3";
 
 const LS_DATA = "garminTracker.v1.data";
 const LS_FUNC_URL = "garminTracker.v1.funcUrl"; // legacy, no longer used
@@ -1703,6 +1703,24 @@ function renderActivities() {
 // Render: Trends (SVG charts)
 function renderTrends() {
   const history = (state && state.history ? state.history : []).slice();
+  const latestSleep = (state && state.sleep) || null;
+  if (latestSleep && latestSleep.date) {
+    const matching = history.find(d => d.date === latestSleep.date);
+    if (matching) {
+      if (matching.sleepMin == null && latestSleep.totalMin != null) {
+        matching.sleepMin = latestSleep.totalMin;
+      }
+      if (matching.deepMin == null && latestSleep.deepMin != null) {
+        matching.deepMin = latestSleep.deepMin;
+      }
+    } else {
+      history.push({
+        date: latestSleep.date,
+        sleepMin: latestSleep.totalMin,
+        deepMin: latestSleep.deepMin,
+      });
+    }
+  }
   history.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const days = TREND_RANGE;
   const windowed = history.slice(-days);
