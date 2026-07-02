@@ -16,6 +16,10 @@ Optional overrides:
     GARMIN_HISTORY_DAYS             default 365
     GARMIN_ACTIVITY_LIMIT           default 20
     GARMIN_STEP_GOAL                default 7000
+    GARMIN_INTENSITY_GOAL           default 140
+    GARMIN_INTENSITY_HR_THRESHOLD   default 110. Any sampled minute with
+                                    heart rate at or above this threshold
+                                    counts as 1 intensity minute.
     GARMIN_TZ                       IANA timezone for determining "today",
                                     e.g. "America/Los_Angeles". Defaults to
                                     "UTC". MUST be set to the user's local
@@ -24,7 +28,8 @@ Optional overrides:
                                     data once it's past local-evening.
     SYNC_MODE                       "live" or "full" (default "full").
                                     Live mode only fetches today + sleep +
-                                    intensity (cheap, ~5 API calls) and
+                                    heart-rate-based intensity (cheap, ~5
+                                    API calls) and
                                     leaves the cached history and activities
                                     in Firestore untouched. Full mode adds
                                     the 365-day history and recent
@@ -67,6 +72,7 @@ ACTIVITY_LIMIT = int(os.getenv("GARMIN_ACTIVITY_LIMIT", "20"))
 STEP_GOAL = int(os.getenv("GARMIN_STEP_GOAL", "7000"))
 CALORIE_GOAL = int(os.getenv("GARMIN_CALORIE_GOAL", "2300"))
 INTENSITY_GOAL = int(os.getenv("GARMIN_INTENSITY_GOAL", "140"))
+INTENSITY_HR_THRESHOLD = int(os.getenv("GARMIN_INTENSITY_HR_THRESHOLD", "110"))
 INTENSITY_DAYS = 7
 
 # Directory used by garth to persist OAuth tokens between runs. When the
@@ -158,6 +164,26 @@ def _current_hr(hr_obj: dict[str, Any]) -> tuple[int | None, str | None]:
     return None, None
 
 
+def _count_threshold_minutes(hr_obj: dict[str, Any], threshold_bpm: int) -> int:
+    """Count unique sampled minutes whose heart rate meets the threshold."""
+    values = hr_obj.get("heartRateValues") or []
+    qualifying_minutes: set[int] = set()
+    for entry in values:
+        if not entry or len(entry) < 2:
+            continue
+        ts, bpm = entry[0], entry[1]
+        if ts is None or bpm is None:
+            continue
+        try:
+            bpm_value = int(bpm)
+            minute_bucket = int(ts) // 60000
+        except (TypeError, ValueError):
+            continue
+        if bpm_value >= threshold_bpm:
+            qualifying_minutes.add(minute_bucket)
+    return len(qualifying_minutes)
+
+
 def _collect_today(client: Garmin) -> dict[str, Any]:
     today_str = _today().isoformat()
     stats = client.get_stats(today_str) or {}
@@ -232,34 +258,21 @@ def _collect_sleep(client: Garmin) -> dict[str, Any]:
     }
 
 
-def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
-    """Collect today + previous (days-1) days of intensity minutes.
-
-    Garmin's standard scoring: each moderate-intensity minute counts as 1
-    and each vigorous-intensity minute counts as 2.
-    """
+def _collect_intensity(client: Garmin, days: int, goal: int, threshold_bpm: int) -> dict[str, Any]:
+    """Collect custom intensity minutes based on heart-rate threshold."""
     today = _today()
     date_strs = [(today - timedelta(days=offset)).isoformat() for offset in range(days)]
 
     def _fetch_day(d_str: str) -> dict[str, Any]:
         try:
-            im = client.get_intensity_minutes_data(d_str) or {}
+            hr = client.get_heart_rates(d_str) or {}
         except Exception as e:
             logger.warning("Intensity fetch failed for %s: %s", d_str, e)
-            im = {}
-        # Newer payloads use moderateMinutes / vigorousMinutes;
-        # older builds used moderateValue / vigorousValue.
-        moderate = int(
-            im.get("moderateMinutes") or im.get("moderateValue") or 0
-        )
-        vigorous = int(
-            im.get("vigorousMinutes") or im.get("vigorousValue") or 0
-        )
+            hr = {}
+        minutes = _count_threshold_minutes(hr, threshold_bpm)
         return {
             "date": d_str,
-            "moderate": moderate,
-            "vigorous": vigorous,
-            "minutes": moderate + 2 * vigorous,
+            "minutes": minutes,
         }
 
     with ThreadPoolExecutor(max_workers=min(days, 8)) as ex:
@@ -271,6 +284,8 @@ def _collect_intensity(client: Garmin, days: int, goal: int) -> dict[str, Any]:
         "totalMinutes": total,
         "goal": goal,
         "windowDays": days,
+        "thresholdBpm": threshold_bpm,
+        "definition": f"Minutes with heart rate at or above {threshold_bpm} bpm",
     }
 
 
@@ -373,7 +388,13 @@ def run_sync(mode: str = "full") -> dict[str, Any]:
     with ThreadPoolExecutor(max_workers=6) as ex:
         f_today = ex.submit(_collect_today, client)
         f_sleep = ex.submit(_collect_sleep, client)
-        f_intensity = ex.submit(_collect_intensity, client, INTENSITY_DAYS, INTENSITY_GOAL)
+        f_intensity = ex.submit(
+            _collect_intensity,
+            client,
+            INTENSITY_DAYS,
+            INTENSITY_GOAL,
+            INTENSITY_HR_THRESHOLD,
+        )
         f_profile = ex.submit(_profile, client)
         f_history = ex.submit(_collect_history, client, HISTORY_DAYS) if mode == "full" else None
         f_activities = ex.submit(_collect_activities, client, ACTIVITY_LIMIT) if mode == "full" else None

@@ -167,6 +167,11 @@ python -m http.server 5500
 
 ## Known limits / notes
 
+- **Custom intensity minutes**: the app does not use Garmin's built-in
+  intensity-minute scoring. It counts each sampled minute where heart rate is
+  at least 110 bpm as 1 intensity minute. Override the threshold with
+  `GARMIN_INTENSITY_HR_THRESHOLD` if needed.
+
 - **Garmin MFA**: this sync runs unattended. If your Garmin account uses MFA,
   the workflow will fail with a clear message. Use a Garmin account without
   MFA, or extend `scripts/sync.py` to use a pre-generated Garth token cached

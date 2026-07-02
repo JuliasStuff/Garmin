@@ -678,7 +678,7 @@ body.editing .card::before {
     </div>
 
     <div class="card" data-key="intensity">
-      <h3>🔥 Intensity minutes <span class="muted" id="intensity-window">(7-day)</span></h3>
+      <h3>🔥 Intensity minutes <span class="muted" id="intensity-window">(7-day, HR >= 110)</span></h3>
       <div class="intensity-row">
         <div class="intensity-value" id="intensity-value">—</div>
         <div class="intensity-goal-label" id="intensity-goal">of 140</div>
@@ -1510,6 +1510,7 @@ function renderIntensity() {
   if (!im) {
     valEl.textContent = "—";
     goalLbl.textContent = "of 140";
+    winLbl.textContent = "(7-day, HR >= 110)";
     bar.style.width = "0%";
     daysEl.innerHTML = "";
     return;
@@ -1518,8 +1519,9 @@ function renderIntensity() {
   const total = im.totalMinutes || 0;
   const pct = Math.min(100, goal > 0 ? Math.round((total / goal) * 100) : 0);
   const windowDays = im.windowDays || 7;
+  const threshold = im.thresholdBpm || 110;
 
-  winLbl.textContent = "(" + windowDays + "-day)";
+  winLbl.textContent = "(" + windowDays + "-day, HR >= " + threshold + ")";
   valEl.innerHTML = "";
   valEl.appendChild(document.createTextNode(String(total)));
   valEl.appendChild(el("span", { class: "unit" }, "min"));
